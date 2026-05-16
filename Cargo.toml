@@ -1,0 +1,3 @@
+[workspace]
+members = ["pcs_cli","pcs_core","pcs_worker"]
+resolver = "3"

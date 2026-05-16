@@ -1,0 +1,7 @@
+{
+  "name": "pcs_worker",
+  "packageManager": "yarn@4.5.2",
+  "devDependencies": {
+    "wrangler": "^4.92.0"
+  }
+}

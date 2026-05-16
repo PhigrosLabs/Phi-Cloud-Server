@@ -1,0 +1,27 @@
+name = "pcs_worker"
+main = "pcs_worker/build/index.js"
+
+kv_namespaces = [
+  { binding = "FILE_KV" },
+  { binding = "DB_KV" }
+]
+
+r2_buckets = [
+  { binding = "PHI_BUCKET", bucket_name = "phi-bucket" }
+]
+
+[build]
+command = "worker-build --release"
+cwd = "./pcs_worker"
+
+[observability]
+enabled = true
+
+[vars]
+LOG_LEVEL = "DEBUG"
+WEBHOOK_URL = ""
+FILE_MODE = "R2"
+SCHEME = "http"
+FILE_KV_NAMESPACE = "FILE_KV"
+DB_KV_NAMESPACE = "DB_KV"
+R2_BUCKET = "PHI_BUCKET"

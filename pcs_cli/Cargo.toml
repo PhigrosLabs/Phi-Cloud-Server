@@ -1,0 +1,10 @@
+[package]
+name = "pcs_cli"
+version = "0.1.0"
+edition = "2024"
+authors = ["Shua-github <CHA_shua@outlook.com>"]
+
+[dependencies]
+redb = "4"
+pcs_core = {path = "../pcs_core"}
+async-trait = "0.1"
