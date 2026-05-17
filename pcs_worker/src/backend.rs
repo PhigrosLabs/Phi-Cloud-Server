@@ -9,13 +9,18 @@ use pcs_core::user::AuthData;
 use worker::*;
 
 use crate::kv::WorkerKVStorage;
-use crate::utils::UnsafeSend;
+use crate::utils::{UnsafeSend, UnsafeStream};
+
+pub enum FileMode {
+    R2,
+    Kv,
+}
 
 pub struct WorkerBackend {
     pub db_kv: WorkerKVStorage,
     pub file_kv: Option<KvStore>,
     pub r2: Option<Bucket>,
-    pub file_mode: String,
+    pub file_mode: FileMode,
     pub webhook: Option<String>,
     pub scheme: String,
 }
@@ -372,14 +377,13 @@ impl FileBucket for WorkerBackend {
     type MultipartUpload = FileMultipartUpload;
     type Error = PCSError;
 
-    async fn head(&self, key: &str) -> Result<ObjectMetadata, Self::Error> {
-        if self.file_mode == "R2" {
+    async fn head(&self, key: impl Into<String> + Send) -> Result<ObjectMetadata, Self::Error> {
+        if matches!(self.file_mode, FileMode::R2) {
             let bucket = self
                 .r2
                 .as_ref()
                 .ok_or_else(|| PCSError::internal_error("R2 not configured"))?
                 .clone();
-            let key = key.to_string();
             let obj = UnsafeSend(async move { bucket.head(key).await })
                 .await
                 .map_err(|e| PCSError::internal_error(e.to_string()))?
@@ -396,7 +400,7 @@ impl FileBucket for WorkerBackend {
                 .as_ref()
                 .ok_or_else(|| PCSError::internal_error("file KV not configured"))?
                 .clone();
-            let key = key.to_string();
+            let key = key.into();
             // Try metadata first
             let meta_key = format!("{}:meta", key);
             let kv_meta = kv.clone();
@@ -448,50 +452,69 @@ impl FileBucket for WorkerBackend {
         }
     }
 
-    async fn get_data(&self, key: &str) -> Result<Vec<u8>, Self::Error> {
-        if self.file_mode == "R2" {
+    async fn get_data(
+        &self,
+        key: impl Into<String> + Send,
+    ) -> Result<impl futures::Stream<Item = bytes::Bytes> + Send + Sync + 'static, Self::Error>
+    {
+        use bytes::Bytes;
+        use futures::{StreamExt, stream};
+        use std::pin::Pin;
+
+        type DynStream = Pin<Box<dyn futures::Stream<Item = Bytes> + 'static>>;
+
+        let raw: DynStream = if matches!(self.file_mode, FileMode::R2) {
             let bucket = self
                 .r2
                 .as_ref()
                 .ok_or_else(|| PCSError::internal_error("R2 not configured"))?
                 .clone();
-            let key = key.to_string();
             let obj = UnsafeSend(async move { bucket.get(key).execute().await })
                 .await
                 .map_err(|e| PCSError::internal_error(e.to_string()))?
                 .ok_or_else(|| PCSError::not_found("object not found"))?;
-            let data = if let Some(body) = obj.body() {
-                UnsafeSend(async move { body.bytes().await })
-                    .await
-                    .map_err(|e| PCSError::internal_error(e.to_string()))?
+            if let Some(body) = obj.body() {
+                let bstream = body
+                    .stream()
+                    .map_err(|e| PCSError::internal_error(e.to_string()))?;
+                Box::pin(bstream.filter_map(|res| async move {
+                    match res {
+                        Ok(v) => Some(Bytes::from(v)),
+                        Err(_) => None,
+                    }
+                }))
             } else {
-                Vec::new()
-            };
-            Ok(data)
+                Box::pin(stream::empty())
+            }
         } else {
             let kv = self
                 .file_kv
                 .as_ref()
                 .ok_or_else(|| PCSError::internal_error("file KV not configured"))?
                 .clone();
-            let key = key.to_string();
-            UnsafeSend(async move {
-                Ok::<_, worker::Error>(kv.get(&key).bytes().await.map_err(worker::Error::from)?)
+            let data = UnsafeSend(async move {
+                Ok::<_, worker::Error>(
+                    kv.get(&key.into())
+                        .bytes()
+                        .await
+                        .map_err(worker::Error::from)?,
+                )
             })
             .await
             .map_err(|e: worker::Error| PCSError::internal_error(e.to_string()))?
-            .ok_or_else(|| PCSError::not_found("object not found"))
-        }
+            .ok_or_else(|| PCSError::not_found("object not found"))?;
+            Box::pin(stream::once(async move { Bytes::from(data) }))
+        };
+        Ok(UnsafeStream(raw))
     }
 
-    async fn delete(&self, key: &str) -> Result<(), Self::Error> {
-        if self.file_mode == "R2" {
+    async fn delete(&self, key: impl Into<String> + Send) -> Result<(), Self::Error> {
+        if matches!(self.file_mode, FileMode::R2) {
             let bucket = self
                 .r2
                 .as_ref()
                 .ok_or_else(|| PCSError::internal_error("R2 not configured"))?
                 .clone();
-            let key = key.to_string();
             UnsafeSend(async move { bucket.delete(key).await })
                 .await
                 .map_err(|e| PCSError::internal_error(e.to_string()))?;
@@ -501,7 +524,7 @@ impl FileBucket for WorkerBackend {
                 .as_ref()
                 .ok_or_else(|| PCSError::internal_error("file KV not configured"))?
                 .clone();
-            let key = key.to_string();
+            let key = key.into();
             let meta_key = format!("{}:meta", key);
             UnsafeSend(async move {
                 let _ = kv.delete(&key).await;
@@ -514,15 +537,17 @@ impl FileBucket for WorkerBackend {
         Ok(())
     }
 
-    async fn create_multipart_upload(&self, key: &str) -> Result<String, Self::Error> {
+    async fn create_multipart_upload(
+        &self,
+        key: impl Into<String> + Send,
+    ) -> Result<String, Self::Error> {
         let upload_id = random_id();
-        if self.file_mode == "R2" {
+        if matches!(self.file_mode, FileMode::R2) {
             let bucket = self
                 .r2
                 .as_ref()
                 .ok_or_else(|| PCSError::internal_error("R2 not configured"))?
                 .clone();
-            let key = key.to_string();
             let upload =
                 UnsafeSend(async move { bucket.create_multipart_upload(key).execute().await })
                     .await
@@ -533,7 +558,7 @@ impl FileBucket for WorkerBackend {
                 .file_kv
                 .as_ref()
                 .ok_or_else(|| PCSError::internal_error("file KV not configured"))?;
-            let state_key = format!("{}:upload:{}:state", key, upload_id);
+            let state_key = format!("{}:upload:{}:state", key.into(), upload_id);
             let kv = kv.clone();
             UnsafeSend(async move {
                 kv.put(&state_key, serde_json::to_vec(&Vec::<u32>::new())?)?
@@ -548,10 +573,10 @@ impl FileBucket for WorkerBackend {
 
     async fn get_multipart_upload(
         &self,
-        key: &str,
-        upload_id: &str,
+        key: impl Into<String> + Send,
+        upload_id: impl Into<String> + Send,
     ) -> Result<Self::MultipartUpload, Self::Error> {
-        if self.file_mode == "R2" {
+        if matches!(self.file_mode, FileMode::R2) {
             let bucket = self
                 .r2
                 .as_ref()
@@ -570,8 +595,8 @@ impl FileBucket for WorkerBackend {
                 .clone();
             Ok(FileMultipartUpload::Kv(KvMultipartUpload {
                 kv,
-                key: key.to_string(),
-                upload_id: upload_id.to_string(),
+                key: key.into(),
+                upload_id: upload_id.into(),
             }))
         }
     }

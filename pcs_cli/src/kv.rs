@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{Database, ReadableDatabase, TableDefinition};
+use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
 use pcs_core::types::kv::{KVStorage, KVTable};
@@ -39,15 +40,39 @@ impl KVStorage for RedbKVStorage {
 impl KVTable for RedbKVTable {
     type Error = redb::Error;
 
-    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, Self::Error> {
+    async fn get<T>(&self, key: &str) -> Result<Option<T>, Self::Error>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
         let tab_def: TableDefinition<&str, Vec<u8>> = TableDefinition::new(&self.table_name);
+
         let txn = self.db.begin_read()?;
         let table = txn.open_table(tab_def)?;
+
         let value = table.get(key)?;
-        Ok(value.map(|v: redb::AccessGuard<Vec<u8>>| v.value().clone()))
+
+        let result = match value {
+            Some(v) => {
+                let bytes = v.value();
+                let decoded = serde_json::from_slice::<T>(&bytes).map_err(|e| {
+                    redb::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                })?;
+                Some(decoded)
+            }
+            None => None,
+        };
+
+        Ok(result)
     }
 
-    async fn put(&self, key: &str, value: &[u8]) -> Result<(), Self::Error> {
+    async fn put<T>(&self, key: &str, value: &T) -> Result<(), Self::Error>
+    where
+        T: Serialize + Send + Sync,
+    {
+        let value = serde_json::to_vec(value).map_err(|e| {
+            redb::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        })?;
+
         let tab_def: TableDefinition<&str, Vec<u8>> = TableDefinition::new(&self.table_name);
         let txn = self.db.begin_write()?;
         {
@@ -67,21 +92,5 @@ impl KVTable for RedbKVTable {
         }
         txn.commit()?;
         Ok(())
-    }
-
-    async fn list_keys(&self, prefix: &str) -> Result<Vec<String>, Self::Error> {
-        let tab_def: TableDefinition<&str, Vec<u8>> = TableDefinition::new(&self.table_name);
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(tab_def)?;
-
-        let mut results = Vec::new();
-        for item in table.iter()? {
-            let (k, _): (_, redb::AccessGuard<Vec<u8>>) = item?;
-            let key_str = k.value().to_string();
-            if key_str.starts_with(prefix) {
-                results.push(key_str);
-            }
-        }
-        Ok(results)
     }
 }

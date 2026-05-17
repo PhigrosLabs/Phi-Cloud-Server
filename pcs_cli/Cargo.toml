@@ -8,3 +8,5 @@ authors = ["Shua-github <CHA_shua@outlook.com>"]
 redb = "4"
 pcs_core = {path = "../pcs_core"}
 async-trait = "0.1"
+serde_json = "1"
+serde = "1" 

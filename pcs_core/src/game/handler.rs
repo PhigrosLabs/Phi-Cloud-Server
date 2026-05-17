@@ -11,12 +11,12 @@ use crate::{
     utils::ToRfc3339Z,
 };
 
-use crate::utils::{MapPCSError, kv_get, kv_put};
+use crate::utils::MapPCSError;
 
 pub async fn handle_create<B: PCSBackend>(
     backend: &B,
     session_token: &str,
-    params: CreateGameSaveParams,
+    params: GameSaveParams,
 ) -> Result<CreateGameSaveResponse, PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
     let _file_token = get_file_token(backend, &params.game_file.object_id).await?;
@@ -25,18 +25,24 @@ pub async fn handle_create<B: PCSBackend>(
         params.summary,
         params.game_file.object_id,
         params.modified_at.iso,
-        params.name,
-        &session.object_id,
         backend,
     );
 
     let kv = backend.kv().await;
     let game_saves = kv.open_table("game_saves").await.map_db_err()?;
-    kv_put(&game_saves, &gs.object_id, &gs).await?;
+    game_saves.put(&gs.object_id, &gs).await.map_db_err()?;
 
     let games_by_user = kv.open_table("game_saves_by_user").await.map_db_err()?;
-    let user_gk = format!("{}:{}", session.object_id, gs.object_id);
-    games_by_user.put(&user_gk, &[]).await.map_internal_err()?;
+    let mut list: Vec<String> = games_by_user
+        .get(&session.object_id)
+        .await
+        .map_db_err()?
+        .unwrap_or_default();
+    list.push(gs.object_id.clone());
+    games_by_user
+        .put(&session.object_id, &list)
+        .await
+        .map_internal_err()?;
 
     let event_user = (&session).into();
     backend
@@ -56,7 +62,7 @@ pub async fn handle_create<B: PCSBackend>(
 pub async fn handle_list<B: PCSBackend>(
     backend: &B,
     session_token: &str,
-    server_url:&str,
+    server_url: &str,
 ) -> Result<ListGameSaveResponse, PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
 
@@ -64,56 +70,53 @@ pub async fn handle_list<B: PCSBackend>(
     let games_by_user = kv.open_table("game_saves_by_user").await.map_db_err()?;
     let game_saves = kv.open_table("game_saves").await.map_db_err()?;
 
-    let prefix = format!("{}:", session.object_id);
+    let gs_ids: Vec<String> = games_by_user
+        .get(&session.object_id)
+        .await
+        .map_db_err()?
+        .unwrap_or_default();
     let mut items = Vec::new();
-    let keys = games_by_user.list_keys(&prefix).await.map_internal_err()?;
-    for key in &keys {
-        if let Some(gs_objid) = key.strip_prefix(&prefix) {
-            if let Some(gs) = kv_get::<GameSave, _>(&game_saves, gs_objid).await? {
-                let ft = file::get_file_token(backend, &gs.game_file_object_id).await?;
-                items.push(GameSaveItem {
-                    summary: gs.summary,
-                    game_file: ft.to_response(server_url),
-                    user: Pointer::new("_User", &gs.user_object_id),
-                    modified_at: GameDate::new(gs.modified_at),
-                    name: gs.name,
-                    object_id: gs.object_id,
-                    created_at: gs.created_at.to_rfc3339_z(),
-                    updated_at: gs.updated_at.to_rfc3339_z(),
-                });
-            }
+    for gs_objid in &gs_ids {
+        if let Some(gs) = game_saves.get::<GameSave>(gs_objid).await.map_db_err()? {
+            let ft = file::get_file_token(backend, &gs.game_file_object_id).await?;
+            items.push(GameSaveItem {
+                summary: gs.summary,
+                game_file: ft.to_response(server_url),
+                user: Pointer::new("_User", &session.object_id),
+                name: ".save".into(),
+                modified_at: GameDate::new(gs.modified_at),
+                object_id: gs.object_id.clone(),
+                created_at: gs.created_at.to_rfc3339_z(),
+                updated_at: gs.updated_at.to_rfc3339_z(),
+            });
         }
     }
 
-    Ok(ListGameSaveResponse {results:items})
+    Ok(ListGameSaveResponse { results: items })
 }
 
 pub async fn handle_update<B: PCSBackend>(
     backend: &B,
     object_id: &str,
     session_token: &str,
-    params: UpdateGameSaveParams,
+    params: GameSaveParams,
 ) -> Result<(), PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
 
     let kv = backend.kv().await;
     let game_saves = kv.open_table("game_saves").await.map_db_err()?;
-    let mut gs: GameSave = kv_get(&game_saves, object_id)
-        .await?
+    let mut gs: GameSave = game_saves
+        .get(object_id)
+        .await
+        .map_db_err()?
         .ok_or_else(PCSError::db_not_found)?;
 
-    if gs.user_object_id != session.object_id {
-        return Err(PCSError::unauthorized(
-            "not authorized to update this game save",
-        ));
-    }
-
     gs.summary = params.summary;
-    gs.name = params.name;
     gs.modified_at = params.modified_at.iso;
+    gs.game_file_object_id = params.game_file.object_id;
     gs.updated_at = backend.get_utc_now();
 
-    kv_put(&game_saves, &gs.object_id, &gs).await?;
+    game_saves.put(&gs.object_id, &gs).await.map_db_err()?;
 
     let event_user = (&session).into();
     backend

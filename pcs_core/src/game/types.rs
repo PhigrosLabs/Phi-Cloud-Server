@@ -1,7 +1,5 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
 use crate::file::FileTokenResponse;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pointer {
@@ -40,13 +38,10 @@ impl GameDate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateGameSaveParams {
+pub struct GameSaveParams {
     pub summary: String,
     #[serde(rename = "gameFile")]
     pub game_file: Pointer,
-    #[serde(rename = "ACL")]
-    pub acl: HashMap<String, HashMap<String, bool>>,
-    pub name: String,
     #[serde(rename = "modifiedAt")]
     pub modified_at: GameDate,
 }
@@ -86,5 +81,5 @@ pub struct GameSaveItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListGameSaveResponse {
-    pub results: Vec<GameSaveItem>
+    pub results: Vec<GameSaveItem>,
 }

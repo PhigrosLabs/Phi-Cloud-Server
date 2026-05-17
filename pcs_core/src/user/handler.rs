@@ -14,7 +14,7 @@ use crate::{
     utils::ToRfc3339Z,
 };
 
-use crate::utils::{MapPCSError, kv_delete, kv_get, kv_put};
+use crate::utils::MapPCSError;
 
 pub async fn handle_register<B: PCSBackend>(
     backend: &B,
@@ -27,7 +27,11 @@ pub async fn handle_register<B: PCSBackend>(
     let kv = backend.kv().await;
     let sessions_by_openid = kv.open_table("sessions_by_openid").await.map_db_err()?;
 
-    if let Some(token) = kv_get::<String, _>(&sessions_by_openid, &auth.openid).await? {
+    if let Some(token) = sessions_by_openid
+        .get::<String>(&auth.openid)
+        .await
+        .map_db_err()?
+    {
         let session = get_session_by_token(backend, &token).await?;
         backend
             .emit_event(Event::UserLogin {
@@ -42,14 +46,18 @@ pub async fn handle_register<B: PCSBackend>(
     let sessions = kv.open_table("sessions").await.map_db_err()?;
     let sessions_by_objid = kv.open_table("sessions_by_objid").await.map_db_err()?;
 
-    kv_put(&sessions, &session.session_token, &session).await?;
-    kv_put(&sessions_by_openid, &session.openid, &session.session_token).await?;
-    kv_put(
-        &sessions_by_objid,
-        &session.object_id,
-        &session.session_token,
-    )
-    .await?;
+    sessions
+        .put(&session.session_token, &session)
+        .await
+        .map_db_err()?;
+    sessions_by_openid
+        .put(&session.openid, &session.session_token)
+        .await
+        .map_db_err()?;
+    sessions_by_objid
+        .put(&session.object_id, &session.session_token)
+        .await
+        .map_db_err()?;
     backend
         .emit_event(Event::UserCreate {
             user: EventUser::from(&session),
@@ -100,17 +108,21 @@ pub async fn handle_delete<B: PCSBackend>(
     let kv = backend.kv().await;
     let games_by_user = kv.open_table("game_saves_by_user").await.map_db_err()?;
     let game_saves = kv.open_table("game_saves").await.map_db_err()?;
-    let prefix = format!("{}:", session.object_id);
-    let keys = games_by_user.list_keys(&prefix).await.map_internal_err()?;
-    for key in &keys {
-        if let Some(gs_objid) = key.strip_prefix(&prefix) {
-            if let Some(gs) = kv_get::<GameSave, _>(&game_saves, gs_objid).await? {
-                let _ = file::handle_delete(backend, &gs.game_file_object_id).await;
-            }
-            kv_delete(&game_saves, gs_objid).await?;
-            kv_delete(&games_by_user, key).await?;
+    let gs_ids: Vec<String> = games_by_user
+        .get(&session.object_id)
+        .await
+        .map_db_err()?
+        .unwrap_or_default();
+    for gs_objid in &gs_ids {
+        if let Some(gs) = game_saves.get::<GameSave>(gs_objid).await.map_db_err()? {
+            file::handle_delete(backend, &gs.game_file_object_id).await?;
         }
+        game_saves.delete(gs_objid).await.map_db_err()?;
     }
+    games_by_user
+        .delete(&session.object_id)
+        .await
+        .map_db_err()?;
 
     delete_session_tables(backend, &session).await?;
     backend
@@ -137,15 +149,18 @@ pub async fn handle_refresh_token<B: PCSBackend>(
 
     let kv = backend.kv().await;
     let sessions = kv.open_table("sessions").await.map_db_err()?;
-    kv_delete(&sessions, &session.session_token).await?;
+    sessions.delete(&session.session_token).await.map_db_err()?;
 
     session.session_token = backend.random_id();
     session.updated_at = backend.get_utc_now();
-    kv_put(&sessions, &session.session_token, &session).await?;
+    sessions
+        .put(&session.session_token, &session)
+        .await
+        .map_db_err()?;
 
     let sessions_by_objid = kv.open_table("sessions_by_objid").await.map_db_err()?;
     sessions_by_objid
-        .put(&session.object_id, session.session_token.as_bytes())
+        .put(&session.object_id, &session.session_token)
         .await
         .map_internal_err()?;
 

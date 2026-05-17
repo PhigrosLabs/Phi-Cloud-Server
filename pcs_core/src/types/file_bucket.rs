@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use bytes::Bytes;
+use futures::Stream;
 use std::error::Error;
 use std::fmt::Debug;
 
@@ -61,17 +63,23 @@ pub trait FileBucket: Sync + Send + 'static {
     type MultipartUpload: MultipartUpload;
     type Error: Error + Send;
 
-    async fn head(&self, key: &str) -> Result<ObjectMetadata, Self::Error>;
+    async fn head(&self, key: impl Into<String> + Send) -> Result<ObjectMetadata, Self::Error>;
 
-    async fn get_data(&self, key: &str) -> Result<Vec<u8>, Self::Error>;
+    async fn get_data(
+        &self,
+        key: impl Into<String> + Send,
+    ) -> Result<impl Stream<Item = Bytes> + Send + Sync + 'static, Self::Error>;
 
-    async fn delete(&self, key: &str) -> Result<(), Self::Error>;
+    async fn delete(&self, key: impl Into<String> + Send) -> Result<(), Self::Error>;
 
-    async fn create_multipart_upload(&self, key: &str) -> Result<String, Self::Error>;
+    async fn create_multipart_upload(
+        &self,
+        key: impl Into<String> + Send,
+    ) -> Result<String, Self::Error>;
 
     async fn get_multipart_upload(
         &self,
-        key: &str,
-        upload_id: &str,
+        key: impl Into<String> + Send,
+        upload_id: impl Into<String> + Send,
     ) -> Result<Self::MultipartUpload, Self::Error>;
 }

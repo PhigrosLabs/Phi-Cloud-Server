@@ -2,24 +2,29 @@ mod backend;
 mod kv;
 mod utils;
 
-use backend::WorkerBackend;
-use futures_util::TryStreamExt;
+use backend::{FileMode, WorkerBackend};
 use kv::WorkerKVStorage;
 use pcs_core::handler::PhiCloudServer;
 use worker::*;
 
 #[event(fetch)]
-async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<HttpResponse> {
+async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
     let webhook_url = env
         .var("WEBHOOK_URL")
         .ok()
         .map(|s| s.to_string())
         .and_then(|s| if s.is_empty() { None } else { Some(s) });
 
-    let file_mode = env
+    let file_mode = match env
         .var("FILE_MODE")
         .map(|s| s.to_string())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .as_str()
+    {
+        "R2" => FileMode::R2,
+        "KV" => FileMode::Kv,
+        _ => panic!("不支持"),
+    };
 
     let scheme = env
         .var("SCHEME")
@@ -37,7 +42,7 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<HttpResponse
     };
 
     // File storage: R2 or KV
-    let r2 = if file_mode == "R2" {
+    let r2 = if matches!(file_mode, FileMode::R2) {
         let bucket_name = env
             .var("R2_BUCKET")
             .map(|s| s.to_string())
@@ -47,7 +52,7 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<HttpResponse
         None
     };
 
-    let file_kv = if file_mode != "R2" && !file_mode.is_empty() {
+    let file_kv = if matches!(file_mode, FileMode::Kv) {
         let file_kv_namespace = env
             .var("FILE_KV_NAMESPACE")
             .map(|s| s.to_string())
@@ -61,36 +66,14 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<HttpResponse
         db_kv,
         file_kv,
         r2,
-        file_mode: file_mode.clone(),
+        file_mode,
         webhook: webhook_url,
         scheme,
     };
 
     let server = PhiCloudServer::new(backend);
 
-    let (parts, body) = req.into_parts();
-    let body_bytes = Box::pin(body)
-        .try_fold(Vec::new(), |mut acc, chunk| async move {
-            acc.extend_from_slice(&chunk);
-            Ok(acc)
-        })
-        .await
-        .map_err(|e| worker::Error::RustError(e.to_string()))?;
+    let resp = server.handler(req).await;
 
-    let http_req = http::Request::from_parts(parts, body_bytes);
-
-    let resp = server.handler(http_req).await;
-
-    let (parts, body_vec) = resp.into_parts();
-    let mut builder = ResponseBuilder::new().with_status(parts.status.as_u16());
-
-    for (name, value) in &parts.headers {
-        if let Ok(v) = value.to_str() {
-            builder = builder.with_header(name.as_str(), v)?;
-        }
-    }
-
-    let worker_resp = builder.body(ResponseBody::Body(body_vec));
-    let http_resp: HttpResponse = worker_resp.try_into()?;
-    Ok(http_resp)
+    worker::Response::try_from(resp)
 }

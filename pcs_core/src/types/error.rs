@@ -1,3 +1,4 @@
+use crate::{PcsBody, pcs_body_from_bytes};
 use http::{Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -86,14 +87,16 @@ impl fmt::Display for PCSError {
 
 impl std::error::Error for PCSError {}
 
-impl From<PCSError> for Response<Vec<u8>> {
+impl From<PCSError> for Response<PcsBody> {
     fn from(err: PCSError) -> Self {
         Response::builder()
             .status(
                 StatusCode::from_u16(err.http_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             )
             .header("Content-Type", "application/json; charset=utf-8")
-            .body(serde_json::to_vec(&err).unwrap_or_default())
+            .body(pcs_body_from_bytes(
+                serde_json::to_vec(&err).unwrap_or_default(),
+            ))
             .unwrap()
     }
 }

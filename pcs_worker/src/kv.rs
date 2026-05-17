@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use pcs_core::types::kv::{KVStorage, KVTable};
+use serde::{Serialize, de::DeserializeOwned};
 use worker::*;
 
 use crate::utils::UnsafeSend;
@@ -33,15 +34,38 @@ impl KVStorage for WorkerKVStorage {
 impl KVTable for WorkerKVStorage {
     type Error = worker::Error;
 
-    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, Self::Error> {
+    async fn get<T>(&self, key: &str) -> Result<Option<T>, Self::Error>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
         let pk = self.prefixed_key(key);
-        UnsafeSend(async move { Ok(self.kv.get(&pk).bytes().await?) }).await
+
+        UnsafeSend(async move {
+            let opt = self.kv.get(&pk).bytes().await?;
+
+            match opt {
+                Some(bytes) => {
+                    let v = serde_json::from_slice::<T>(&bytes)
+                        .map_err(|e| worker::Error::RustError(e.to_string()))?;
+                    Ok(Some(v))
+                }
+                None => Ok(None),
+            }
+        })
+        .await
     }
 
-    async fn put(&self, key: &str, value: &[u8]) -> Result<(), Self::Error> {
+    async fn put<T>(&self, key: &str, value: &T) -> Result<(), Self::Error>
+    where
+        T: Serialize + Send + Sync,
+    {
         let pk = self.prefixed_key(key);
+
         UnsafeSend(async move {
-            self.kv.put_bytes(&pk, &value)?.execute().await?;
+            let bytes =
+                serde_json::to_vec(value).map_err(|e| worker::Error::RustError(e.to_string()))?;
+
+            self.kv.put_bytes(&pk, &bytes)?.execute().await?;
             Ok(())
         })
         .await
@@ -49,24 +73,10 @@ impl KVTable for WorkerKVStorage {
 
     async fn delete(&self, key: &str) -> Result<(), Self::Error> {
         let pk = self.prefixed_key(key);
+
         UnsafeSend(async move {
             self.kv.delete(&pk).await?;
             Ok(())
-        })
-        .await
-    }
-
-    async fn list_keys(&self, prefix: &str) -> Result<Vec<String>, Self::Error> {
-        let full_prefix = self.prefixed_key(prefix);
-        let prefix_len = self.table_prefix.len() + 1; // "table:"
-        UnsafeSend(async move {
-            let list = self.kv.list().prefix(full_prefix).execute().await?;
-            let keys: Vec<String> = list
-                .keys
-                .into_iter()
-                .map(|k| k.name[prefix_len..].to_string())
-                .collect();
-            Ok(keys)
         })
         .await
     }

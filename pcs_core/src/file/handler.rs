@@ -1,10 +1,13 @@
+use bytes::Bytes;
+use futures::Stream;
+
 use crate::{
     file::{model::*, types::*, utils::*},
     types::{
         backend::PCSBackend,
         error::PCSError,
         file_bucket::{FileBucket, MultipartUpload, UploadedPart},
-        kv::KVStorage,
+        kv::{KVStorage, KVTable},
     },
 };
 
@@ -29,9 +32,9 @@ pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Resul
 
     let kv = backend.kv().await;
     let file_tokens = kv.open_table("file_tokens").await.map_db_err()?;
-    kv_delete(&file_tokens, &ft.object_id).await?;
+    file_tokens.delete(&ft.object_id).await.map_db_err()?;
     let ft_by_key = kv.open_table("file_tokens_by_key").await.map_db_err()?;
-    kv_delete(&ft_by_key, &ft.key).await?;
+    ft_by_key.delete(&ft.key).await.map_db_err()?;
 
     Ok(())
 }
@@ -39,10 +42,10 @@ pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Resul
 pub async fn handle_download<B: PCSBackend>(
     backend: &B,
     object_id: &str,
-) -> Result<Vec<u8>, PCSError> {
+) -> Result<impl Stream<Item = Bytes> + Send + Sync + 'static, PCSError> {
     let ft = get_file_token(backend, object_id).await?;
     let fb = backend.file_bucket().await;
-    fb.get_data(&ft.key).await.map_internal_err()
+    fb.get_data(ft.key).await.map_internal_err()
 }
 
 pub async fn handle_callback<B: PCSBackend>(
@@ -94,7 +97,7 @@ pub async fn handle_complete_upload<B: PCSBackend>(
     backend: &B,
     token_key: &str,
     upload_id: &str,
-    parts: Vec<UploadedPartInfo>,
+    params: CompleteUploadParams,
 ) -> Result<CompleteUploadResponse, PCSError> {
     let key = decode_base64_key(token_key)?;
     let ft = get_file_token(backend, &key).await?;
@@ -105,7 +108,8 @@ pub async fn handle_complete_upload<B: PCSBackend>(
         .await
         .map_internal_err()?;
 
-    let upload_parts: Vec<UploadedPart> = parts
+    let upload_parts: Vec<UploadedPart> = params
+        .parts
         .into_iter()
         .map(|p| UploadedPart::new(p.part_number, p.etag))
         .collect();
