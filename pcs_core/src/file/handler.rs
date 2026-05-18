@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use bytes::Bytes;
 use futures::Stream;
 
@@ -27,14 +28,12 @@ pub async fn handle_create_token<B: PCSBackend>(
 pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Result<(), PCSError> {
     let ft = get_file_token(backend, object_id).await?;
 
-    let fb = backend.file_bucket().await;
+    let fb = backend.fb();
     fb.delete(&ft.key).await.map_internal_err()?;
 
-    let kv = backend.kv().await;
+    let kv = backend.kv();
     let file_tokens = kv.open_table("file_tokens").await.map_db_err()?;
-    file_tokens.delete(&ft.object_id).await.map_db_err()?;
-    let ft_by_key = kv.open_table("file_tokens_by_key").await.map_db_err()?;
-    ft_by_key.delete(&ft.key).await.map_db_err()?;
+    file_tokens.delete(&ft.key).await.map_db_err()?;
 
     Ok(())
 }
@@ -44,8 +43,8 @@ pub async fn handle_download<B: PCSBackend>(
     object_id: &str,
 ) -> Result<impl Stream<Item = Bytes> + Send + Sync + 'static, PCSError> {
     let ft = get_file_token(backend, object_id).await?;
-    let fb = backend.file_bucket().await;
-    fb.get_data(ft.key).await.map_internal_err()
+    let fb = backend.fb();
+    fb.get(ft.key).await.map_internal_err()
 }
 
 pub async fn handle_callback<B: PCSBackend>(
@@ -61,7 +60,7 @@ pub async fn handle_start_upload<B: PCSBackend>(
     let key = decode_base64_key(token_key)?;
     let ft = get_file_token(backend, &key).await?;
 
-    let fb = backend.file_bucket().await;
+    let fb = backend.fb();
     let upload_id = fb
         .create_multipart_upload(&ft.key)
         .await
@@ -80,7 +79,7 @@ pub async fn handle_upload_part<B: PCSBackend>(
     let key = decode_base64_key(token_key)?;
     let ft = get_file_token(backend, &key).await?;
 
-    let fb = backend.file_bucket().await;
+    let fb = backend.fb();
     let mut upload = fb
         .get_multipart_upload(&ft.key, upload_id)
         .await
@@ -102,7 +101,7 @@ pub async fn handle_complete_upload<B: PCSBackend>(
     let key = decode_base64_key(token_key)?;
     let ft = get_file_token(backend, &key).await?;
 
-    let fb = backend.file_bucket().await;
+    let fb = backend.fb();
     let mut upload = fb
         .get_multipart_upload(&ft.key, upload_id)
         .await

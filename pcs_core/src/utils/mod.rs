@@ -1,3 +1,4 @@
+use alloc::string::{String, ToString};
 use base64::Engine;
 use chrono::{DateTime, SecondsFormat, Utc};
 pub(crate) mod http;

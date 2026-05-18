@@ -1,3 +1,5 @@
+use alloc::{string::String, vec::Vec};
+
 use crate::{
     file::{self, utils::get_file_token},
     game::{model::GameSave, types::*},
@@ -28,7 +30,7 @@ pub async fn handle_create<B: PCSBackend>(
         backend,
     );
 
-    let kv = backend.kv().await;
+    let kv = backend.kv();
     let game_saves = kv.open_table("game_saves").await.map_db_err()?;
     game_saves.put(&gs.object_id, &gs).await.map_db_err()?;
 
@@ -66,7 +68,7 @@ pub async fn handle_list<B: PCSBackend>(
 ) -> Result<ListGameSaveResponse, PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
 
-    let kv = backend.kv().await;
+    let kv = backend.kv();
     let games_by_user = kv.open_table("game_saves_by_user").await.map_db_err()?;
     let game_saves = kv.open_table("game_saves").await.map_db_err()?;
 
@@ -103,7 +105,7 @@ pub async fn handle_update<B: PCSBackend>(
 ) -> Result<(), PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
 
-    let kv = backend.kv().await;
+    let kv = backend.kv();
     let game_saves = kv.open_table("game_saves").await.map_db_err()?;
     let mut gs: GameSave = game_saves
         .get(object_id)

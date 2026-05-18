@@ -1,3 +1,4 @@
+use alloc::string::String;
 use serde::{Deserialize, Serialize};
 
 use crate::user::model::Session;
@@ -31,11 +32,11 @@ pub enum Event {
     #[serde(rename = "user.create")]
     UserCreate { user: EventUser },
     #[serde(rename = "user.update")]
-    UserUpdate { user: EventUser },
+    UserUpdate { user: EventUser, new: EventUser },
     #[serde(rename = "user.delete")]
     UserDelete { user: EventUser },
     #[serde(rename = "user.refresh_session_token")]
-    UserRefreshSessionToken { user: EventUser },
+    UserRefreshSessionToken { user: EventUser, new: EventUser },
     #[serde(rename = "save.create")]
     SaveCreate {
         user: EventUser,

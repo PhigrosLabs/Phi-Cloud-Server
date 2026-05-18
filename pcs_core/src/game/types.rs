@@ -1,4 +1,5 @@
 use crate::file::FileTokenResponse;
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

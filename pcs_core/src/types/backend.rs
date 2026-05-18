@@ -1,3 +1,5 @@
+use alloc::boxed::Box;
+use alloc::string::String;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -27,8 +29,8 @@ pub trait PCSBackend: Send + Sync + 'static {
     type FB: FileBucket;
     type KV: KVStorage;
 
-    async fn file_bucket(&self) -> &Self::FB;
-    async fn kv(&self) -> &Self::KV;
+    fn fb(&self) -> &Self::FB;
+    fn kv(&self) -> &Self::KV;
     async fn user_check(&self, auth: &AuthData) -> Result<UserCheckResult, PCSError>;
     async fn emit_event(&self, event: Event);
     fn scheme(&self) -> String;

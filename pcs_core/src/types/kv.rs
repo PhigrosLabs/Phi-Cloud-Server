@@ -1,5 +1,6 @@
+use alloc::boxed::Box;
 use async_trait::async_trait;
-use std::error::Error;
+use core::error::Error;
 
 #[async_trait]
 pub trait KVStorage: Send + Sync + 'static {

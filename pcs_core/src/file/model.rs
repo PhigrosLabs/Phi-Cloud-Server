@@ -2,6 +2,10 @@ use crate::{
     types::{ACL, backend::PCSBackend},
     utils::ToRfc3339Z,
 };
+use alloc::{
+    format,
+    string::{String, ToString},
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -30,10 +34,8 @@ pub struct FileToken {
     pub key: String,
     pub meta_data: MetaData,
     pub name: String,
-    pub object_id: String,
     pub token: String,
     pub acl: ACL,
-    pub bucket: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -47,15 +49,12 @@ impl FileToken {
     ) -> Self {
         let now = backend.get_utc_now();
         let name = name.into();
-        let id = backend.random_id();
         Self {
-            key: id.clone(),
+            key: backend.random_id(),
             meta_data,
             name,
-            object_id: id.clone(),
             token: backend.random_id(),
             acl,
-            bucket: "phi_bucket".into(),
             created_at: now,
             updated_at: now,
         }
@@ -64,13 +63,13 @@ impl FileToken {
     pub fn to_response(&self, server_url: &str) -> FileTokenResponse {
         FileTokenResponse {
             type_field: "File".into(),
-            object_id: self.object_id.clone(),
+            object_id: self.key.clone(),
             key: self.key.clone(),
             name: self.name.clone(),
             token: self.token.clone(),
             meta_data: self.meta_data.clone(),
             acl: self.acl.clone(),
-            bucket: self.bucket.clone(),
+            bucket: "file".into(),
             upload_url: server_url.to_string(),
             url: format!("{}/1.1/files/{}", server_url, self.key),
             provider: "qiniu".into(),

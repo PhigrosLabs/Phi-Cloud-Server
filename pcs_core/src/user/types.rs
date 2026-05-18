@@ -1,3 +1,4 @@
+use alloc::string::String;
 use serde::{Deserialize, Serialize};
 
 use crate::{user::model::Session, utils::ToRfc3339Z};

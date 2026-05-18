@@ -1,7 +1,7 @@
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-use crate::file::model::MetaData;
+use crate::{file::model::MetaData, types::ACL};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateFileTokenParams {
@@ -12,7 +12,7 @@ pub struct CreateFileTokenParams {
     #[serde(rename = "metaData")]
     pub meta_data: MetaData,
     #[serde(rename = "ACL")]
-    pub acl: HashMap<String, HashMap<String, bool>>,
+    pub acl: ACL,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,7 +27,7 @@ pub struct FileTokenResponse {
     #[serde(rename = "metaData")]
     pub meta_data: MetaData,
     #[serde(rename = "ACL")]
-    pub acl: HashMap<String, HashMap<String, bool>>,
+    pub acl: ACL,
     pub bucket: String,
     #[serde(rename = "upload_url")]
     pub upload_url: String,

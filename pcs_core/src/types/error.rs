@@ -1,7 +1,8 @@
-use crate::{PcsBody, pcs_body_from_bytes};
+use alloc::{fmt, string::String};
 use http::{Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::fmt;
+
+use crate::{types::PcsBody, utils::pcs_body_from_bytes};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u32)]
@@ -85,7 +86,7 @@ impl fmt::Display for PCSError {
     }
 }
 
-impl std::error::Error for PCSError {}
+impl core::error::Error for PCSError {}
 
 impl From<PCSError> for Response<PcsBody> {
     fn from(err: PCSError) -> Self {

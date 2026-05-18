@@ -2,7 +2,7 @@ mod backend;
 mod kv;
 mod utils;
 
-use backend::{FileMode, WorkerBackend};
+use backend::WorkerBackend;
 use kv::WorkerKVStorage;
 use pcs_core::handler::PhiCloudServer;
 use worker::*;
@@ -14,17 +14,6 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
         .ok()
         .map(|s| s.to_string())
         .and_then(|s| if s.is_empty() { None } else { Some(s) });
-
-    let file_mode = match env
-        .var("FILE_MODE")
-        .map(|s| s.to_string())
-        .unwrap_or_default()
-        .as_str()
-    {
-        "R2" => FileMode::R2,
-        "KV" => FileMode::Kv,
-        _ => panic!("不支持"),
-    };
 
     let scheme = env
         .var("SCHEME")
@@ -41,32 +30,15 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
         table_prefix: String::new(),
     };
 
-    // File storage: R2 or KV
-    let r2 = if matches!(file_mode, FileMode::R2) {
-        let bucket_name = env
-            .var("R2_BUCKET")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|_| "PHI_BUCKET".into());
-        Some(env.bucket(&bucket_name)?)
-    } else {
-        None
-    };
-
-    let file_kv = if matches!(file_mode, FileMode::Kv) {
-        let file_kv_namespace = env
-            .var("FILE_KV_NAMESPACE")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|_| "FILE_KV".into());
-        Some(env.kv(&file_kv_namespace)?)
-    } else {
-        None
-    };
+    let bucket_name = env
+        .var("R2_BUCKET")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|_| "PHI_BUCKET".into());
+    let r2 = env.bucket(&bucket_name)?;
 
     let backend = WorkerBackend {
         db_kv,
-        file_kv,
         r2,
-        file_mode,
         webhook: webhook_url,
         scheme,
     };
@@ -75,5 +47,5 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
 
     let resp = server.handler(req).await;
 
-    worker::Response::try_from(resp)
+    utils::build_response(resp).await
 }

@@ -1,8 +1,11 @@
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
 use async_trait::async_trait;
 use bytes::Bytes;
+use core::error::Error;
+use core::fmt::Debug;
 use futures::Stream;
-use std::error::Error;
-use std::fmt::Debug;
 
 #[derive(Debug)]
 pub struct UploadedPart {
@@ -24,21 +27,14 @@ pub struct ObjectMetadata {
     pub key: String,
     pub etag: String,
     pub size: u64,
-    pub content_type: Option<String>,
 }
 
 impl ObjectMetadata {
-    pub fn new(
-        key: impl Into<String>,
-        etag: impl Into<String>,
-        size: u64,
-        content_type: Option<String>,
-    ) -> Self {
+    pub fn new(key: impl Into<String>, etag: impl Into<String>, size: u64) -> Self {
         Self {
             key: key.into(),
             etag: etag.into(),
             size,
-            content_type,
         }
     }
 }
@@ -65,10 +61,10 @@ pub trait FileBucket: Sync + Send + 'static {
 
     async fn head(&self, key: impl Into<String> + Send) -> Result<ObjectMetadata, Self::Error>;
 
-    async fn get_data(
+    async fn get(
         &self,
         key: impl Into<String> + Send,
-    ) -> Result<impl Stream<Item = Bytes> + Send + Sync + 'static, Self::Error>;
+    ) -> Result<impl Stream<Item = Bytes> + Send + Sync + Unpin + 'static, Self::Error>;
 
     async fn delete(&self, key: impl Into<String> + Send) -> Result<(), Self::Error>;
 
