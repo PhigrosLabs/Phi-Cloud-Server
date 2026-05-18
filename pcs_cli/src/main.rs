@@ -3,7 +3,6 @@ mod config;
 mod file_bucket;
 mod kv;
 mod tokios;
-mod utils;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -24,7 +23,6 @@ use pcs_core::handler::PhiCloudServer;
 use tokio::net::TcpListener;
 
 use crate::tokios::TokioIo;
-use crate::utils::UnsafeSendFuture;
 
 type AppState = Arc<PhiCloudServer<CliBackend>>;
 
@@ -136,21 +134,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let service = service_fn(move |req| handle_req(service_server.clone(), req));
 
-        tokio::task::spawn(
-            // SAFETY:
-            // 该 future 实际满足 Send，
-            // 当前 stable rustc 因生命周期/HRTB 推导限制无法证明。
-            //
-            // nightly + -Zhigher-ranked-assumptions 可通过正常类型检查
-            // https://github.com/rust-lang/rust/issues/100013
-            //
-            // 已确认 future 捕获状态均为 Send，
-            // 不包含线程亲和的 !Send 状态。
-            UnsafeSendFuture(async move {
-                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                    println!("Error serving connection: {:?}", err);
-                }
-            }),
-        );
+        tokio::task::spawn(async move {
+            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                println!("Error serving connection: {:?}", err);
+            }
+        });
     }
 }
