@@ -10,4 +10,4 @@ pub mod kv;
 
 pub type ACL = BTreeMap<String, BTreeMap<String, bool>>;
 
-pub type PcsBody = Option<Box<dyn Stream<Item = Bytes> + Send + Sync + Unpin + 'static>>;
+pub type PcsBody = Option<Box<dyn Stream<Item = Bytes> + Send + Unpin + 'static>>;

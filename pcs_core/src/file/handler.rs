@@ -41,7 +41,7 @@ pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Resul
 pub async fn handle_download<B: PCSBackend>(
     backend: &B,
     object_id: &str,
-) -> Result<impl Stream<Item = Bytes> + Send + Sync + 'static, PCSError> {
+) -> Result<impl Stream<Item = Bytes> + Send + 'static, PCSError> {
     let ft = get_file_token(backend, object_id).await?;
     let fb = backend.fb();
     fb.get(ft.key).await.map_internal_err()

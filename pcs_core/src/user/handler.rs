@@ -88,7 +88,7 @@ pub async fn handle_update<B: PCSBackend>(
     backend: &B,
     object_id: &str,
     params: UpdateUserParams,
-) -> Result<(), PCSError> {
+) -> Result<SessionResponse, PCSError> {
     let mut session = get_session_by_object_id(backend, object_id).await?;
     let old = EventUser::from(&session);
     session.nickname = params.nickname;
@@ -100,7 +100,7 @@ pub async fn handle_update<B: PCSBackend>(
             new: EventUser::from(&session),
         })
         .await;
-    Ok(())
+    Ok(SessionResponse::from(&session))
 }
 
 pub async fn handle_delete<B: PCSBackend>(

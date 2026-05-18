@@ -199,7 +199,7 @@ impl FileBucket for WorkerBackend {
     async fn get(
         &self,
         key: impl Into<String> + Send,
-    ) -> Result<impl Stream<Item = bytes::Bytes> + Send + Sync + Unpin + 'static, Self::Error> {
+    ) -> Result<impl Stream<Item = bytes::Bytes> + Send + Unpin + 'static, Self::Error> {
         use bytes::Bytes;
         use futures::{StreamExt, stream};
 

@@ -1,10 +1,12 @@
 use std::{
+    error::Error,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use futures::Future;
+use bytes::Bytes;
 use futures::stream::StreamExt;
+use futures::{Future, Stream, TryStreamExt};
 use pcs_core::types::PcsBody;
 use worker::{Headers, Response, ResponseBuilder};
 
@@ -72,4 +74,19 @@ pub async fn build_response(resp: http::Response<PcsBody>) -> worker::Result<Res
     };
 
     Ok(response)
+}
+
+pub async fn stream_to_vec<S, E>(stream: S) -> Result<Vec<u8>, E>
+where
+    S: Stream<Item = Result<Bytes, E>> + Unpin,
+    E: Error,
+{
+    let chunks: Vec<Bytes> = stream.try_collect().await?;
+    let total_len: usize = chunks.iter().map(|c| c.len()).sum();
+    let mut result = Vec::with_capacity(total_len);
+    for chunk in chunks {
+        result.extend_from_slice(&chunk);
+    }
+
+    Ok(result)
 }

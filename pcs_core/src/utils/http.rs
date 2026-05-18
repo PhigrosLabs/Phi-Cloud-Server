@@ -40,7 +40,7 @@ pub fn pcs_body_from_bytes(data: impl Into<Bytes>) -> PcsBody {
 
 pub fn pcs_body_from_stream<S>(stream: S) -> PcsBody
 where
-    S: Stream<Item = Bytes> + Send + Sync + Unpin + 'static,
+    S: Stream<Item = Bytes> + Send + Unpin + 'static,
 {
     Some(Box::new(stream))
 }

@@ -1,3 +1,3 @@
 [workspace]
-members = ["pcs_cli","pcs_core","pcs_worker"]
+members = ["pcs_cli","pcs_core","pcs_worker","pcs_cli_debug"]
 resolver = "3"

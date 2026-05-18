@@ -56,7 +56,7 @@ pub struct UpdateGameSaveParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateGameSaveResponse {
+pub struct PutGameSaveResponse {
     #[serde(rename = "objectId")]
     pub object_id: String,
     #[serde(rename = "createdAt")]

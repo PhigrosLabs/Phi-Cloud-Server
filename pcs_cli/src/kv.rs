@@ -47,7 +47,13 @@ impl KVTable for RedbKVTable {
         let tab_def: TableDefinition<&str, Vec<u8>> = TableDefinition::new(&self.table_name);
 
         let txn = self.db.begin_read()?;
-        let table = txn.open_table(tab_def)?;
+        let table = match txn.open_table(tab_def) {
+            Ok(table) => table,
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                return Ok(None);
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         let value = table.get(key)?;
 

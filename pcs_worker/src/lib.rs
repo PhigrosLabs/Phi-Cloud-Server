@@ -2,10 +2,14 @@ mod backend;
 mod kv;
 mod utils;
 
+use std::sync::Arc;
+
 use backend::WorkerBackend;
 use kv::WorkerKVStorage;
 use pcs_core::handler::PhiCloudServer;
 use worker::*;
+
+use crate::utils::stream_to_vec;
 
 #[event(fetch)]
 async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
@@ -43,9 +47,11 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
         scheme,
     };
 
-    let server = PhiCloudServer::new(backend);
+    let server = Arc::new(PhiCloudServer::new(backend));
 
-    let resp = server.handler(req).await;
+    let (parts, body) = req.into_parts();
+    let new_req = http::Request::from_parts(parts, stream_to_vec(body).await?);
+    let resp = server.handler(new_req).await;
 
     utils::build_response(resp).await
 }

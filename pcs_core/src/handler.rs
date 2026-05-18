@@ -1,8 +1,4 @@
-use core::error::Error;
-
 use alloc::{format, string::String, vec::Vec};
-use bytes::Bytes;
-use futures::{Stream, TryStreamExt};
 use http::{Request, Response, header};
 use serde::Deserialize;
 
@@ -12,21 +8,6 @@ use crate::{
     user::{self, AuthData},
     utils::{MapPCSError, created, no_content, ok, pcs_body_from_stream},
 };
-
-async fn stream_to_vec<S, E>(stream: S) -> Result<Vec<u8>, E>
-where
-    S: Stream<Item = Result<Bytes, E>> + Unpin,
-    E: Error,
-{
-    let chunks: Vec<Bytes> = stream.try_collect().await?;
-    let total_len: usize = chunks.iter().map(|c| c.len()).sum();
-    let mut result = Vec::with_capacity(total_len);
-    for chunk in chunks {
-        result.extend_from_slice(&chunk);
-    }
-
-    Ok(result)
-}
 
 #[derive(Deserialize)]
 struct RegisterBody {
@@ -48,26 +29,19 @@ impl<B: PCSBackend> PhiCloudServer<B> {
         Self { backend }
     }
 
-    pub async fn handler(
-        &self,
-        req: Request<impl Stream<Item = Result<Bytes, impl Error>> + Unpin>,
-    ) -> Response<PcsBody> {
+    pub async fn handler(&self, req: Request<Vec<u8>>) -> Response<PcsBody> {
         match self.dispatch(req).await {
             Ok(resp) => resp,
             Err(err) => err.into(),
         }
     }
 
-    async fn dispatch(
-        &self,
-        req: Request<impl Stream<Item = Result<Bytes, impl Error>> + Unpin>,
-    ) -> Result<Response<PcsBody>, PCSError> {
+    async fn dispatch(&self, req: Request<Vec<u8>>) -> Result<Response<PcsBody>, PCSError> {
         let (parts, body) = req.into_parts();
 
         let method = parts.method.as_str();
         let path = parts.uri.path();
         let headers = parts.headers;
-        let body = stream_to_vec(body).await.map_bad_err()?;
 
         let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 

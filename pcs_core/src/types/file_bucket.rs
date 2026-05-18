@@ -64,7 +64,7 @@ pub trait FileBucket: Sync + Send + 'static {
     async fn get(
         &self,
         key: impl Into<String> + Send,
-    ) -> Result<impl Stream<Item = Bytes> + Send + Sync + Unpin + 'static, Self::Error>;
+    ) -> Result<impl Stream<Item = Bytes> + Send + Unpin + 'static, Self::Error>;
 
     async fn delete(&self, key: impl Into<String> + Send) -> Result<(), Self::Error>;
 

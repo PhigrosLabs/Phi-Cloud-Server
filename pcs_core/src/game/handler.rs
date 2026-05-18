@@ -19,7 +19,7 @@ pub async fn handle_create<B: PCSBackend>(
     backend: &B,
     session_token: &str,
     params: GameSaveParams,
-) -> Result<CreateGameSaveResponse, PCSError> {
+) -> Result<PutGameSaveResponse, PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
     let _file_token = get_file_token(backend, &params.game_file.object_id).await?;
 
@@ -55,7 +55,7 @@ pub async fn handle_create<B: PCSBackend>(
         })
         .await;
 
-    Ok(CreateGameSaveResponse {
+    Ok(PutGameSaveResponse {
         object_id: gs.object_id,
         created_at: gs.created_at.to_rfc3339_z(),
     })
@@ -102,7 +102,7 @@ pub async fn handle_update<B: PCSBackend>(
     object_id: &str,
     session_token: &str,
     params: GameSaveParams,
-) -> Result<(), PCSError> {
+) -> Result<PutGameSaveResponse, PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
 
     let kv = backend.kv();
@@ -129,5 +129,8 @@ pub async fn handle_update<B: PCSBackend>(
         })
         .await;
 
-    Ok(())
+    Ok(PutGameSaveResponse {
+        object_id: gs.object_id,
+        created_at: gs.created_at.to_rfc3339_z(),
+    })
 }
