@@ -21,7 +21,7 @@ impl GameSave {
         modified_at: impl Into<String>,
         backend: &impl PCSBackend,
     ) -> Self {
-        let now = backend.get_utc_now();
+        let now = backend.utc_now();
         Self {
             summary: summary.into(),
             game_file_object_id: game_file_object_id.into(),

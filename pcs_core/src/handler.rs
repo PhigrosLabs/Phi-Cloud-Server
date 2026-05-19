@@ -1,5 +1,5 @@
-use alloc::{format, string::String, vec::Vec};
-use http::{Request, Response, header};
+use alloc::vec::Vec;
+use http::{Request, Response};
 use send_future::SendFuture;
 use serde::Deserialize;
 
@@ -25,14 +25,14 @@ pub struct PhiCloudServer<B: PCSBackend> {
     backend: B,
 }
 
-// 所有异步操作都应调用send进行断言,详情 https://github.com/rust-lang/rust/issues/100013
 impl<B: PCSBackend> PhiCloudServer<B> {
     pub fn new(backend: B) -> Self {
         Self { backend }
     }
 
     pub async fn handler(&self, req: Request<Vec<u8>>) -> Response<PcsBody> {
-        match self.dispatch(req).await {
+        // 跨crate有推断问题 https://github.com/rust-lang/rust/issues/100013 此issue解决后可删除.send()和send-future = "0.1"
+        match self.dispatch(req).send().await {
             Ok(resp) => resp,
             Err(err) => err.into(),
         }
@@ -53,38 +53,27 @@ impl<B: PCSBackend> PhiCloudServer<B> {
             // =========================
             ("POST", ["1.1", "users"]) => {
                 let rb: RegisterBody = serde_json::from_slice(&body).map_bad_err()?;
-                created(
-                    &user::handle_register(&self.backend, rb.auth_data.taptap)
-                        .send()
-                        .await?,
-                )
+                created(&user::handle_register(&self.backend, rb.auth_data.taptap).await?)
             }
 
             ("GET", ["1.1", "users", "me"]) => {
                 let st = Self::session_token(&headers)?;
-                ok(&user::handle_get_current(&self.backend, st).send().await?)
+                ok(&user::handle_get_current(&self.backend, st).await?)
             }
 
             ("PUT", ["1.1", "users", obj_id]) | ("PUT", ["1.1", "classes", "_User", obj_id]) => {
                 let params = serde_json::from_slice(&body).map_bad_err()?;
-                user::handle_update(&self.backend, obj_id, params)
-                    .send()
-                    .await?;
-                no_content()
+                ok(&user::handle_update(&self.backend, obj_id, params).await?)
             }
 
             ("PUT", ["1.1", "users", obj_id, "refreshSessionToken"]) => {
                 let st = Self::session_token(&headers)?;
-                ok(&user::handle_refresh_token(&self.backend, obj_id, st)
-                    .send()
-                    .await?)
+                ok(&user::handle_refresh_token(&self.backend, obj_id, st).await?)
             }
 
             ("DELETE", ["1.1", "users", obj_id]) => {
                 let st = Self::session_token(&headers)?;
-                user::handle_delete(&self.backend, obj_id, st)
-                    .send()
-                    .await?;
+                user::handle_delete(&self.backend, obj_id, st).await?;
                 no_content()
             }
 
@@ -93,42 +82,29 @@ impl<B: PCSBackend> PhiCloudServer<B> {
             // =========================
             ("POST", ["1.1", "fileTokens"]) => {
                 let params = serde_json::from_slice(&body).map_bad_err()?;
-                let server_url = self.get_server_url(&headers)?;
-                created(
-                    &file::handle_create_token(&self.backend, params, &server_url)
-                        .send()
-                        .await?,
-                )
+                let st = Self::session_token(&headers)?;
+                let server_url = self.backend.server_url();
+                created(&file::handle_create_token(&self.backend, st, params, &server_url).await?)
             }
 
             ("GET", ["1.1", "files", obj_id]) => {
-                let stream = file::handle_download(&self.backend, obj_id).send().await?;
-
-                Response::builder()
-                    .status(200)
-                    .header("Content-Type", "application/octet-stream")
-                    .header("Cache-Control", "public, max-age=31536000, immutable")
-                    .body(pcs_body_from_stream(stream))
-                    .map_bad_err()
+                let stream = file::handle_download(&self.backend, obj_id).await?;
+                Ok(Response::new(pcs_body_from_stream(stream)))
             }
 
             ("DELETE", ["1.1", "files", obj_id]) => {
-                file::handle_delete(&self.backend, obj_id).send().await?;
+                file::handle_delete(&self.backend, obj_id).await?;
                 no_content()
             }
 
-            ("POST", ["1.1", "fileCallback"]) => {
-                ok(&file::handle_callback(&self.backend).send().await?)
-            }
+            ("POST", ["1.1", "fileCallback"]) => ok(&file::handle_callback(&self.backend).await?),
 
             // =========================
             // Upload routes
             // =========================
-            ("POST", ["buckets", _bucket, "objects", token_key, "uploads"]) => created(
-                &file::handle_start_upload(&self.backend, token_key)
-                    .send()
-                    .await?,
-            ),
+            ("POST", ["buckets", _bucket, "objects", token_key, "uploads"]) => {
+                created(&file::handle_start_upload(&self.backend, token_key).await?)
+            }
 
             (
                 "PUT",
@@ -153,7 +129,6 @@ impl<B: PCSBackend> PhiCloudServer<B> {
                     pn,
                     body.to_vec(),
                 )
-                .send()
                 .await?)
             }
 
@@ -171,7 +146,6 @@ impl<B: PCSBackend> PhiCloudServer<B> {
                 let params = serde_json::from_slice(&body).map_bad_err()?;
                 ok(
                     &file::handle_complete_upload(&self.backend, token_key, upload_id, params)
-                        .send()
                         .await?,
                 )
             }
@@ -181,32 +155,23 @@ impl<B: PCSBackend> PhiCloudServer<B> {
             // =========================
             ("GET", ["1.1", "classes", "_GameSave"]) => {
                 let st = Self::session_token(&headers)?;
-                let server_url = self.get_server_url(&headers)?;
+                let server_url = self.backend.server_url();
 
-                ok(&game::handle_list(&self.backend, st, &server_url)
-                    .send()
-                    .await?)
+                ok(&game::handle_list(&self.backend, st, &server_url).await?)
             }
 
             ("POST", ["1.1", "classes", "_GameSave"]) => {
                 let st = Self::session_token(&headers)?;
                 let params = serde_json::from_slice(&body).map_bad_err()?;
 
-                created(
-                    &game::handle_create(&self.backend, st, params)
-                        .send()
-                        .await?,
-                )
+                created(&game::handle_create(&self.backend, st, params).await?)
             }
 
             ("PUT", ["1.1", "classes", "_GameSave", obj_id]) => {
                 let st = Self::session_token(&headers)?;
                 let params = serde_json::from_slice(&body).map_bad_err()?;
 
-                game::handle_update(&self.backend, obj_id, st, params)
-                    .send()
-                    .await?;
-                no_content()
+                ok(&game::handle_update(&self.backend, obj_id, st, params).await?)
             }
 
             _ => Err(PCSError::not_found("route not found")),
@@ -218,14 +183,5 @@ impl<B: PCSBackend> PhiCloudServer<B> {
             .get("X-LC-Session")
             .and_then(|v| v.to_str().ok())
             .ok_or_else(|| PCSError::unauthorized("missing session token"))
-    }
-
-    fn get_server_url(&self, headers: &http::HeaderMap) -> Result<String, PCSError> {
-        let host = headers
-            .get(header::HOST)
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| PCSError::bad_request("missing host"))?;
-
-        Ok(format!("{}://{}", self.backend.scheme(), host))
     }
 }

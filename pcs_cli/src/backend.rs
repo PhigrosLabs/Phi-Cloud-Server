@@ -15,7 +15,7 @@ pub struct CliBackend {
     pub kv: RedbKVStorage,
     pub fb: FileFileBucket,
     pub webhook: Option<String>,
-    pub scheme: String,
+    pub server_url: String,
     pub http_client: reqwest::Client,
 }
 
@@ -73,15 +73,15 @@ impl PCSBackend for CliBackend {
             .await;
     }
 
-    fn scheme(&self) -> String {
-        self.scheme.clone()
+    fn server_url(&self) -> String {
+        self.server_url.clone()
     }
 
     fn random_id(&self) -> String {
         random_id()
     }
 
-    fn get_utc_now(&self) -> chrono::DateTime<chrono::Utc> {
+    fn utc_now(&self) -> chrono::DateTime<chrono::Utc> {
         chrono::Utc::now()
     }
 }

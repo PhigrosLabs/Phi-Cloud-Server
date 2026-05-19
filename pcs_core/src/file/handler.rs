@@ -10,15 +10,18 @@ use crate::{
         file_bucket::{FileBucket, MultipartUpload, UploadedPart},
         kv::{KVStorage, KVTable},
     },
+    user,
 };
 
 use crate::utils::*;
 
 pub async fn handle_create_token<B: PCSBackend>(
     backend: &B,
+    session_token: &str,
     params: CreateFileTokenParams,
     server_url: &str,
 ) -> Result<FileTokenResponse, PCSError> {
+    user::get_session_by_token(backend, session_token).await?;
     let ft = FileToken::new(params.meta_data, params.name, params.acl, backend);
 
     save_file_token(backend, &ft).await?;

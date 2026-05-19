@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Some(config.webhook_url.clone())
         },
 
-        scheme: config.scheme.clone(),
+        server_url: config.server_url.clone(),
 
         http_client: reqwest::Client::new(),
     };

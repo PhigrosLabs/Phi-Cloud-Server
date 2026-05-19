@@ -116,7 +116,7 @@ pub async fn handle_update<B: PCSBackend>(
     gs.summary = params.summary;
     gs.modified_at = params.modified_at.iso;
     gs.game_file_object_id = params.game_file.object_id;
-    gs.updated_at = backend.get_utc_now();
+    gs.updated_at = backend.utc_now();
 
     game_saves.put(&gs.object_id, &gs).await.map_db_err()?;
 

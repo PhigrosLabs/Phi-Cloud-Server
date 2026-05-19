@@ -7,16 +7,16 @@ pub struct Config {
     pub webhook_url: String,
     #[serde(default = "default_data_dir")]
     pub data_dir: PathBuf,
-    #[serde(default = "default_scheme")]
-    pub scheme: String,
+    #[serde(default = "default_server_url")]
+    pub server_url: String,
 }
 
 fn default_data_dir() -> PathBuf {
     PathBuf::from("./data")
 }
 
-fn default_scheme() -> String {
-    "http".to_string()
+fn default_server_url() -> String {
+    "https://rak3ffdi.cloud.tds1.tapapis.cn".to_string()
 }
 
 impl Default for Config {
@@ -24,7 +24,7 @@ impl Default for Config {
         Self {
             webhook_url: String::new(),
             data_dir: default_data_dir(),
-            scheme: default_scheme(),
+            server_url: default_server_url(),
         }
     }
 }

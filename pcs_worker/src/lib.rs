@@ -19,8 +19,8 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
         .map(|s| s.to_string())
         .and_then(|s| if s.is_empty() { None } else { Some(s) });
 
-    let scheme = env
-        .var("SCHEME")
+    let server_url = env
+        .var("SERVER_URL")
         .map(|s| s.to_string())
         .unwrap_or_else(|_| "https".into());
 
@@ -40,11 +40,18 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
         .unwrap_or_else(|_| "PHI_BUCKET".into());
     let r2 = env.bucket(&bucket_name)?;
 
+    let user_count_limit: u32 = env
+        .var("USER_COUNT")
+        .ok()
+        .and_then(|s| s.to_string().parse().ok())
+        .unwrap_or(0);
+
     let backend = WorkerBackend {
         db_kv,
         r2,
         webhook: webhook_url,
-        scheme,
+        server_url,
+        user_count_limit,
     };
 
     let server = Arc::new(PhiCloudServer::new(backend));

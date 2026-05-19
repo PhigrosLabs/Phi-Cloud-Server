@@ -33,7 +33,7 @@ pub trait PCSBackend: Send + Sync + 'static {
     fn kv(&self) -> &Self::KV;
     async fn user_check(&self, auth: &AuthData) -> Result<UserCheckResult, PCSError>;
     async fn emit_event(&self, event: Event);
-    fn scheme(&self) -> String;
+    fn server_url(&self) -> String;
     fn random_id(&self) -> String;
-    fn get_utc_now(&self) -> DateTime<Utc>;
+    fn utc_now(&self) -> DateTime<Utc>;
 }

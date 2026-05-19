@@ -5,6 +5,7 @@ use pcs_core::types::{
     error::PCSError,
     event::Event,
     file_bucket::{FileBucket, ObjectMetadata, UploadedPart},
+    kv::KVTable,
 };
 use pcs_core::user::AuthData;
 use worker::*;
@@ -16,7 +17,8 @@ pub struct WorkerBackend {
     pub db_kv: WorkerKVStorage,
     pub r2: Bucket,
     pub webhook: Option<String>,
-    pub scheme: String,
+    pub server_url: String,
+    pub user_count_limit: u32,
 }
 
 #[async_trait]
@@ -33,6 +35,27 @@ impl PCSBackend for WorkerBackend {
     }
 
     async fn user_check(&self, auth: &AuthData) -> Result<UserCheckResult, PCSError> {
+        if self.user_count_limit > 0 {
+            let key = "user_count:openids";
+            let mut openids: Vec<String> = self
+                .db_kv
+                .get::<Vec<String>>(key)
+                .await
+                .map_err(|e| PCSError::internal_error(e.to_string()))?
+                .unwrap_or_default();
+
+            if !openids.contains(&auth.openid) {
+                if openids.len() >= self.user_count_limit as usize {
+                    return Err(PCSError::forbidden("user count limit reached"));
+                }
+                openids.push(auth.openid.clone());
+                self.db_kv
+                    .put(key, &openids)
+                    .await
+                    .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            }
+        }
+
         let Some(ref url) = self.webhook else {
             return Ok(UserCheckResult::default());
         };
@@ -100,15 +123,15 @@ impl PCSBackend for WorkerBackend {
         let _ = UnsafeSend(async move { Fetch::Request(req).send().await }).await;
     }
 
-    fn scheme(&self) -> String {
-        self.scheme.clone()
+    fn server_url(&self) -> String {
+        self.server_url.clone()
     }
 
     fn random_id(&self) -> String {
         random_id()
     }
 
-    fn get_utc_now(&self) -> chrono::DateTime<chrono::Utc> {
+    fn utc_now(&self) -> chrono::DateTime<chrono::Utc> {
         chrono::Utc::now()
     }
 }

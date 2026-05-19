@@ -1,13 +1,12 @@
 name = "pcs_worker"
 main = "pcs_worker/build/index.js"
 
-kv_namespaces = [
-  { binding = "DB_KV" }
-]
+[[kv_namespaces]]
+binding = "DB_KV"
 
-r2_buckets = [
-  { binding = "PHI_BUCKET", bucket_name = "phi-bucket" }
-]
+[[r2_buckets]]
+binding = "PHI_BUCKET"
+bucket_name = "phigros"
 
 [build]
 command = "worker-build --release"
@@ -18,6 +17,7 @@ enabled = true
 
 [vars]
 WEBHOOK_URL = ""
-SCHEME = "http"
+SERVER_URL = "https://rak3ffdi.cloud.tds1.tapapis.cn"
 DB_KV_NAMESPACE = "DB_KV"
 R2_BUCKET = "PHI_BUCKET"
+USER_COUNT = "15"

@@ -47,7 +47,7 @@ impl FileToken {
         acl: ACL,
         backend: &impl PCSBackend,
     ) -> Self {
-        let now = backend.get_utc_now();
+        let now = backend.utc_now();
         let name = name.into();
         Self {
             key: backend.random_id(),

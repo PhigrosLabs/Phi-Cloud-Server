@@ -92,7 +92,7 @@ pub async fn handle_update<B: PCSBackend>(
     let mut session = get_session_by_object_id(backend, object_id).await?;
     let old = EventUser::from(&session);
     session.nickname = params.nickname;
-    session.updated_at = backend.get_utc_now();
+    session.updated_at = backend.utc_now();
     save_session(backend, &session).await?;
     backend
         .emit_event(Event::UserUpdate {
@@ -159,7 +159,7 @@ pub async fn handle_refresh_token<B: PCSBackend>(
     sessions.delete(&session.session_token).await.map_db_err()?;
 
     session.session_token = backend.random_id();
-    session.updated_at = backend.get_utc_now();
+    session.updated_at = backend.utc_now();
     sessions
         .put(&session.session_token, &session)
         .await

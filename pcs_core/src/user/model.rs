@@ -22,7 +22,7 @@ impl Session {
         short_id: impl Into<String>,
         backend: &impl PCSBackend,
     ) -> Self {
-        let now = backend.get_utc_now();
+        let now = backend.utc_now();
         Self {
             object_id: backend.random_id(),
             nickname: nickname.into(),
