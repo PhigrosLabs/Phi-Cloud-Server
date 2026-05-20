@@ -16,3 +16,15 @@ async-trait = "0.1"
 bytes = { version = "1", default-features = false }
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 send-future = "0.1"
+# extensions-save start
+aes = {version = "0.8", optional = true}
+cbc = {version = "0.1", optional = true}
+tinyzip = {version = "0.4", optional = true}
+miniz_oxide = { version = "0.9", default-features = false, features = ["with-alloc"], optional = true}
+phi_save_codec ={ version = "0.3", optional = true}
+# extensions-save end
+
+[features]
+default = ["extensions"]
+extensions = ["extension_save"]
+extension_save = ["aes","cbc","tinyzip","miniz_oxide","phi_save_codec"]
