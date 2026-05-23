@@ -13,14 +13,14 @@ use crate::file::types::FileTokenResponse;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetaData {
-    pub size: i64,
+    pub size: u64,
     #[serde(rename = "_checksum")]
     pub checksum: String,
     pub prefix: String,
 }
 
 impl MetaData {
-    pub fn new(size: i64, checksum: impl Into<String>, prefix: impl Into<String>) -> Self {
+    pub fn new(size: u64, checksum: impl Into<String>, prefix: impl Into<String>) -> Self {
         Self {
             size,
             checksum: checksum.into(),

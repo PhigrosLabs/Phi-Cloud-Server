@@ -78,4 +78,10 @@ pub trait FileBucket: Sync + Send + 'static {
         key: impl Into<String> + Send,
         upload_id: impl Into<String> + Send,
     ) -> Result<Self::MultipartUpload, Self::Error>;
+
+    async fn put(
+        &self,
+        key: impl Into<String> + Send,
+        data: Vec<u8>,
+    ) -> Result<ObjectMetadata, Self::Error>;
 }

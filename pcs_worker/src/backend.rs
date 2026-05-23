@@ -282,4 +282,17 @@ impl FileBucket for WorkerBackend {
             upload: Some(upload),
         })
     }
+
+    async fn put(
+        &self,
+        key: impl Into<String> + Send,
+        data: Vec<u8>,
+    ) -> Result<ObjectMetadata, Self::Error> {
+        let bucket = &self.r2;
+        let obj = UnsafeSend(async move { bucket.put(key, data).execute().await })
+            .await
+            .map_err(|e| PCSError::internal_error(e.to_string()))?
+            .ok_or_else(|| PCSError::internal_error("put returned no object".to_string()))?;
+        Ok(ObjectMetadata::new(obj.key(), obj.http_etag(), obj.size()))
+    }
 }

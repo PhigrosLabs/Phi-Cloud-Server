@@ -2,8 +2,6 @@ mod backend;
 mod kv;
 mod utils;
 
-use std::sync::Arc;
-
 use backend::WorkerBackend;
 use kv::WorkerKVStorage;
 use pcs_core::handler::PhiCloudServer;
@@ -54,8 +52,7 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
         user_count_limit,
     };
 
-    let server = Arc::new(PhiCloudServer::new(backend));
-
+    let server = PhiCloudServer::new(backend);
     let (parts, body) = req.into_parts();
     let new_req = http::Request::from_parts(parts, stream_to_vec(body).await?);
     let resp = server.handler(new_req).await;

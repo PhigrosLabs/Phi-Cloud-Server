@@ -256,4 +256,19 @@ impl FileBucket for FileFileBucket {
             state,
         })
     }
+
+    async fn put(
+        &self,
+        key: impl Into<String> + Send,
+        data: Vec<u8>,
+    ) -> Result<ObjectMetadata, Self::Error> {
+        let key = sanitize_key(&key.into())?;
+        let path = self.object_path(&key);
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let etag = compute_etag(&data);
+        tokio::fs::write(&path, &data).await?;
+        Ok(ObjectMetadata::new(key, etag, data.len() as u64))
+    }
 }

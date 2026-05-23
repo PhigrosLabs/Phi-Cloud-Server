@@ -179,9 +179,16 @@ impl<B: PCSBackend> PhiCloudServer<B> {
             // =========================
             #[cfg(feature = "extension_save")]
             ("GET", ["extension", "save", session_token]) => {
-                use crate::extensions::save::handler::handle_save_extension;
+                use crate::extensions::save::handler::handle_save_extension_get;
                 let query = parts.uri.query();
-                ok(&handle_save_extension(&self.backend, session_token, query).await?)
+                ok(&handle_save_extension_get(&self.backend, session_token, query).await?)
+            }
+
+            #[cfg(feature = "extension_save")]
+            ("PUT", ["extension", "save", session_token]) => {
+                use crate::extensions::save::handler::handle_save_extension_put;
+                handle_save_extension_put(&self.backend, session_token, &body).await?;
+                no_content()
             }
 
             _ => Err(PCSError::not_found("route not found")),

@@ -19,12 +19,13 @@ send-future = "0.1"
 # extensions-save start
 aes = {version = "0.8", optional = true}
 cbc = {version = "0.1", optional = true}
-tinyzip = {version = "0.4", optional = true}
-miniz_oxide = { version = "0.9", default-features = false, features = ["with-alloc"], optional = true}
-phi_save_codec ={ version = "0.3", optional = true}
+shua_zip = {version = "0.1.1", optional = true}
+phi_save_codec ={ version = "0.4", optional = true}
+md-5 = { version = "0.11", default-features = false, optional = true }
+hex = { version = "0.4", default-features = false, optional = true, features = ["alloc"] }
 # extensions-save end
 
 [features]
 default = ["extensions"]
 extensions = ["extension_save"]
-extension_save = ["aes","cbc","tinyzip","miniz_oxide","phi_save_codec"]
+extension_save = ["aes","cbc","shua_zip","phi_save_codec","md-5","hex"]
