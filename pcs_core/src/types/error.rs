@@ -1,8 +1,7 @@
 use alloc::{fmt, string::String};
-use http::{Response, StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::{types::PcsBody, utils::pcs_body_from_bytes};
+use crate::types::{Body, ByteStream, JSON_CONTENT_TYPE, Response};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u32)]
@@ -88,16 +87,12 @@ impl fmt::Display for PCSError {
 
 impl core::error::Error for PCSError {}
 
-impl From<PCSError> for Response<PcsBody> {
+impl<T: ByteStream> From<PCSError> for Response<T> {
     fn from(err: PCSError) -> Self {
-        Response::builder()
-            .status(
-                StatusCode::from_u16(err.http_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            )
-            .header("Content-Type", "application/json; charset=utf-8")
-            .body(pcs_body_from_bytes(
-                serde_json::to_vec(&err).unwrap_or_default(),
-            ))
-            .unwrap()
+        Response {
+            status_code: err.http_code,
+            content_type: Some(JSON_CONTENT_TYPE.into()),
+            body: Some(Body::Bytes(serde_json::to_vec(&err).unwrap_or_default())),
+        }
     }
 }

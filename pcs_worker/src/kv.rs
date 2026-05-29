@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pcs_core::types::kv::{KVStorage, KVTable};
 use serde::{Serialize, de::DeserializeOwned};
 use worker::*;
@@ -17,7 +16,6 @@ impl WorkerKVStorage {
     }
 }
 
-#[async_trait]
 impl KVStorage for WorkerKVStorage {
     type Table = Self;
     type Error = worker::Error;
@@ -30,7 +28,6 @@ impl KVStorage for WorkerKVStorage {
     }
 }
 
-#[async_trait]
 impl KVTable for WorkerKVStorage {
     type Error = worker::Error;
 

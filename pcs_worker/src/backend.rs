@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-use futures::Stream;
 use pcs_core::types::{
     backend::{PCSBackend, UserCheckResult},
     error::PCSError,
@@ -17,11 +15,9 @@ pub struct WorkerBackend {
     pub db_kv: WorkerKVStorage,
     pub r2: Bucket,
     pub webhook: Option<String>,
-    pub server_url: String,
     pub user_count_limit: u32,
 }
 
-#[async_trait]
 impl PCSBackend for WorkerBackend {
     type FB = Self;
     type KV = WorkerKVStorage;
@@ -123,10 +119,6 @@ impl PCSBackend for WorkerBackend {
         let _ = UnsafeSend(async move { Fetch::Request(req).send().await }).await;
     }
 
-    fn server_url(&self) -> String {
-        self.server_url.clone()
-    }
-
     fn random_id(&self) -> String {
         random_id()
     }
@@ -163,7 +155,6 @@ pub struct R2MultipartUpload {
     upload: Option<worker::MultipartUpload>,
 }
 
-#[async_trait]
 impl pcs_core::types::file_bucket::MultipartUpload for R2MultipartUpload {
     type Error = worker::Error;
 
@@ -205,12 +196,12 @@ impl pcs_core::types::file_bucket::MultipartUpload for R2MultipartUpload {
     }
 }
 
-#[async_trait]
 impl FileBucket for WorkerBackend {
     type MultipartUpload = R2MultipartUpload;
     type Error = PCSError;
+    type Stream = UnsafeStream<worker::ByteStream>;
 
-    async fn head(&self, key: impl Into<String> + Send) -> Result<ObjectMetadata, Self::Error> {
+    async fn head(&self, key: &str) -> Result<ObjectMetadata, Self::Error> {
         let bucket = &self.r2;
         let obj = UnsafeSend(async move { bucket.head(key).await })
             .await
@@ -219,38 +210,24 @@ impl FileBucket for WorkerBackend {
         Ok(ObjectMetadata::new(obj.key(), obj.http_etag(), obj.size()))
     }
 
-    async fn get(
-        &self,
-        key: impl Into<String> + Send,
-    ) -> Result<impl Stream<Item = bytes::Bytes> + Send + Unpin + 'static, Self::Error> {
-        use bytes::Bytes;
-        use futures::{StreamExt, stream};
-
+    async fn get(&self, key: &str) -> Result<Self::Stream, Self::Error> {
         let bucket = &self.r2;
         let obj = UnsafeSend(async move { bucket.get(key).execute().await })
             .await
             .map_err(|e| PCSError::internal_error(e.to_string()))?
             .ok_or_else(|| PCSError::not_found("object not found"))?;
 
-        type PStream = UnsafeStream<std::pin::Pin<Box<dyn Stream<Item = Bytes> + 'static>>>;
+        let body = obj
+            .body()
+            .ok_or_else(|| PCSError::not_found("object has no body"))?;
+        let byte_stream = body
+            .stream()
+            .map_err(|e| PCSError::internal_error(e.to_string()))?;
 
-        let raw: PStream = if let Some(body) = obj.body() {
-            let bstream = body
-                .stream()
-                .map_err(|e| PCSError::internal_error(e.to_string()))?;
-            UnsafeStream(Box::pin(bstream.filter_map(|res| async move {
-                match res {
-                    Ok(v) => Some(Bytes::from(v)),
-                    Err(_) => None,
-                }
-            })))
-        } else {
-            UnsafeStream(Box::pin(stream::empty()))
-        };
-        Ok(raw)
+        Ok(UnsafeStream(byte_stream))
     }
 
-    async fn delete(&self, key: impl Into<String> + Send) -> Result<(), Self::Error> {
+    async fn delete(&self, key: &str) -> Result<(), Self::Error> {
         let bucket = &self.r2;
         UnsafeSend(async move { bucket.delete(key).await })
             .await
@@ -258,10 +235,7 @@ impl FileBucket for WorkerBackend {
         Ok(())
     }
 
-    async fn create_multipart_upload(
-        &self,
-        key: impl Into<String> + Send,
-    ) -> Result<String, Self::Error> {
+    async fn create_multipart_upload(&self, key: &str) -> Result<String, Self::Error> {
         let bucket = &self.r2;
         let upload = UnsafeSend(async move { bucket.create_multipart_upload(key).execute().await })
             .await
@@ -271,8 +245,8 @@ impl FileBucket for WorkerBackend {
 
     async fn get_multipart_upload(
         &self,
-        key: impl Into<String> + Send,
-        upload_id: impl Into<String> + Send,
+        key: &str,
+        upload_id: &str,
     ) -> Result<Self::MultipartUpload, Self::Error> {
         let upload = self
             .r2
@@ -283,11 +257,7 @@ impl FileBucket for WorkerBackend {
         })
     }
 
-    async fn put(
-        &self,
-        key: impl Into<String> + Send,
-        data: Vec<u8>,
-    ) -> Result<ObjectMetadata, Self::Error> {
+    async fn put(&self, key: &str, data: Vec<u8>) -> Result<ObjectMetadata, Self::Error> {
         let bucket = &self.r2;
         let obj = UnsafeSend(async move { bucket.put(key, data).execute().await })
             .await

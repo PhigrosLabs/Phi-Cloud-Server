@@ -18,6 +18,7 @@ enum Command {
     /// Dump all tables from a redb database to ./kv.json
     DumpDb {
         /// Path to the redb database
+        #[arg(default_value = "./data/kv.db")]
         db_path: PathBuf,
     },
 }

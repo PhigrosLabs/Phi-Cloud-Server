@@ -1,6 +1,4 @@
 use alloc::vec::Vec;
-use bytes::Bytes;
-use futures::Stream;
 
 use crate::{
     file::{model::*, types::*, utils::*},
@@ -44,10 +42,10 @@ pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Resul
 pub async fn handle_download<B: PCSBackend>(
     backend: &B,
     object_id: &str,
-) -> Result<impl Stream<Item = Bytes> + Send + 'static, PCSError> {
+) -> Result<<B::FB as FileBucket>::Stream, PCSError> {
     let ft = get_file_token(backend, object_id).await?;
     let fb = backend.fb();
-    fb.get(ft.key).await.map_internal_err()
+    fb.get(&ft.key).await.map_internal_err()
 }
 
 pub async fn handle_callback<B: PCSBackend>(

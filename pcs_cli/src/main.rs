@@ -12,7 +12,8 @@ use backend::CliBackend;
 use bytes::Bytes;
 use clap::Parser;
 use config::Config;
-use file_bucket::FileFileBucket;
+use file_bucket::LocalFileBucket;
+use futures::TryStreamExt;
 use http::{Request, Response};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
@@ -20,56 +21,66 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use kv::RedbKVStorage;
 use pcs_core::handler::PhiCloudServer;
+use pcs_core::types::ByteStream;
 use tokio::net::TcpListener;
 
 use crate::tokios::TokioIo;
 
-type AppState = Arc<PhiCloudServer<CliBackend>>;
+type AppState = Arc<CliBackend>;
 
-type RespBody = Full<Bytes>;
+async fn stream_to_bytes<S: ByteStream>(stream: S) -> Vec<u8> {
+    let chunks: Result<Vec<Vec<u8>>, _> = stream.try_collect().await;
+    let chunks = chunks.unwrap_or_default();
+    let total_len: usize = chunks.iter().map(|c| c.len()).sum();
+    let mut result = Vec::with_capacity(total_len);
+    for chunk in chunks {
+        result.extend_from_slice(&chunk);
+    }
 
-async fn body_to_vec<B>(body: B) -> Result<Vec<u8>, B::Error>
-where
-    B: http_body::Body<Data = Bytes>,
-{
-    let collected = body.collect().await?;
-    let bytes = collected.to_bytes();
-
-    Ok(bytes.to_vec())
+    result
 }
 
 async fn handle_req(
-    server: AppState,
+    state: AppState,
     req: Request<Incoming>,
-) -> Result<Response<RespBody>, hyper::Error> {
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
     let (parts, body) = req.into_parts();
 
-    let body = body_to_vec(body).await?;
+    let method = parts.method.as_str();
+    let path = parts.uri.path();
+    let session_token = parts
+        .headers
+        .get("X-LC-Session")
+        .and_then(|v| v.to_str().ok());
 
-    let new_req = Request::from_parts(parts, body);
+    let body = body.collect().await?.to_bytes().to_vec();
 
-    let resp = server.handler(new_req).await;
-
-    let (parts, body) = resp.into_parts();
-
-    let body_bytes = match body {
-        Some(mut stream) => {
-            let mut data = Vec::new();
-
-            use futures::StreamExt;
-
-            while let Some(chunk) = stream.next().await {
-                data.extend_from_slice(&chunk);
-            }
-
-            Bytes::from(data)
-        }
-        None => Bytes::new(),
+    let pcs_req = pcs_core::types::Request {
+        method,
+        path,
+        body,
+        session_token,
+        server_url: &state.server_url,
     };
 
-    let resp = Response::from_parts(parts, Full::new(body_bytes));
+    let resp = PhiCloudServer::handler(state.as_ref(), pcs_req).await;
 
-    Ok(resp)
+    let mut builder = Response::builder().status(resp.status_code);
+
+    if let Some(ct) = &resp.content_type {
+        builder = builder.header("Content-Type", ct.clone());
+    }
+
+    let response = match resp.body {
+        Some(pcs_core::types::Body::Bytes(bytes)) => builder.body(Full::new(bytes.into())).unwrap(),
+        Some(pcs_core::types::Body::ByteStream(stream)) => {
+            let data = stream_to_bytes(stream).await;
+            builder.body(Full::new(Bytes::from(data))).unwrap()
+        }
+        None => builder.body(Full::new(Bytes::new())).unwrap(),
+    };
+
+    Ok(response)
 }
 
 #[derive(Parser)]
@@ -101,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let kv = RedbKVStorage::new(kv_path.to_str().unwrap()).unwrap();
 
-    let fb = FileFileBucket::new(data_dir.join("file"));
+    let fb = LocalFileBucket::new(data_dir.join("file"));
 
     let backend = CliBackend {
         kv,
@@ -118,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         http_client: reqwest::Client::new(),
     };
 
-    let server = Arc::new(PhiCloudServer::new(backend));
+    let backend = Arc::new(backend);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
@@ -130,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let (stream, _) = listener.accept().await?;
 
         let io = TokioIo::new(stream);
-        let service_server = server.clone();
+        let service_server = backend.clone();
 
         let service = service_fn(move |req| handle_req(service_server.clone(), req));
 

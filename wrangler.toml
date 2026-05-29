@@ -1,12 +1,8 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+
 name = "pcs_worker"
 main = "pcs_worker/build/index.js"
-
-[[kv_namespaces]]
-binding = "DB_KV"
-
-[[r2_buckets]]
-binding = "PHI_BUCKET"
-bucket_name = "phigros"
+compatibility_date = "2026-05-29"
 
 [build]
 command = "worker-build --release"
@@ -15,9 +11,37 @@ cwd = "./pcs_worker"
 [observability]
 enabled = true
 
-[vars]
+# dev start
+[env.dev.vars]
+SERVER_URL = "http://127.0.0.1:8787"
+
 WEBHOOK_URL = ""
-SERVER_URL = "https://rak3ffdi.cloud.tds1.tapapis.cn"
 DB_KV_NAMESPACE = "DB_KV"
 R2_BUCKET = "PHI_BUCKET"
 USER_COUNT = "15"
+
+[[env.dev.kv_namespaces]]
+binding = "DB_KV"
+
+[[env.dev.r2_buckets]]
+binding = "PHI_BUCKET"
+bucket_name = "phigros"
+# dev end
+
+# production start
+[env.production.vars]
+SERVER_URL = "https://rak3ffdi.cloud.tds1.tapapis.cn"
+
+WEBHOOK_URL = ""
+DB_KV_NAMESPACE = "DB_KV"
+R2_BUCKET = "PHI_BUCKET"
+USER_COUNT = "15"
+
+[[env.production.kv_namespaces]]
+binding = "DB_KV"
+id = "YOUR_KV_NAMESPACE_ID"
+
+[[env.production.r2_buckets]]
+binding = "PHI_BUCKET"
+bucket_name = "phigros"
+# production end

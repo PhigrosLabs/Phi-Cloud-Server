@@ -1,8 +1,8 @@
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use core::error::Error;
 
-#[async_trait]
+use trait_variant::make;
+
+#[make(Send)]
 pub trait KVStorage: Send + Sync + 'static {
     type Table: KVTable;
     type Error: Error;
@@ -10,7 +10,7 @@ pub trait KVStorage: Send + Sync + 'static {
     async fn open_table(&self, table: &str) -> Result<Self::Table, Self::Error>;
 }
 
-#[async_trait]
+#[make(Send)]
 pub trait KVTable: Send + Sync {
     type Error: Error;
 

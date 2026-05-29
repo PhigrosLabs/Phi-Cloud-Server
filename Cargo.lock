@@ -1066,7 +1066,6 @@ dependencies = [
 name = "pcs_cli"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bytes",
  "chrono",
  "clap",
@@ -1102,37 +1101,33 @@ name = "pcs_core"
 version = "0.1.0"
 dependencies = [
  "aes",
- "async-trait",
  "base64",
- "bytes",
  "cbc",
  "chrono",
  "futures",
  "hex",
- "http",
  "md-5",
  "phi_save_codec",
  "send-future",
  "serde",
  "serde_json",
  "shua_zip",
+ "trait-variant",
 ]
 
 [[package]]
 name = "pcs_worker"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bytes",
  "chrono",
  "futures",
  "getrandom 0.3.4",
- "http",
  "pcs_core",
  "serde",
  "serde_json",
+ "trait-variant",
  "worker",
- "worker-macros",
 ]
 
 [[package]]
@@ -1761,6 +1756,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "trait-variant"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70977707304198400eb4835a78f6a9f928bf41bba420deb8fdb175cd965d77a7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

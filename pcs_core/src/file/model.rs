@@ -1,5 +1,5 @@
 use crate::{
-    types::{ACL, backend::PCSBackend},
+    types::{ACL, OCTET_STREAM_CONTENT_TYPE, backend::PCSBackend},
     utils::ToRfc3339Z,
 };
 use alloc::{
@@ -73,7 +73,7 @@ impl FileToken {
             upload_url: server_url.to_string(),
             url: format!("{}/1.1/files/{}", server_url, self.key),
             provider: "qiniu".into(),
-            mime_type: "application/octet-stream".into(),
+            mime_type: OCTET_STREAM_CONTENT_TYPE.into(),
             created_at: self.created_at.to_rfc3339_z(),
             updated_at: self.updated_at.to_rfc3339_z(),
         }

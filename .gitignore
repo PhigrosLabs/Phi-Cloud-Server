@@ -3,3 +3,5 @@
 /pcs_worker/build
 /.*
 !/.git**
+/config.json
+/data

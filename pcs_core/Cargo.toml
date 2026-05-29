@@ -3,19 +3,18 @@ name = "pcs_core"
 version = "0.1.0"
 edition = "2024"
 authors = ["Shua-github <CHA_shua@outlook.com>"]
+license = "MIT"
 
 [lib]
 
 [dependencies]
-http = { version = "1", default-features = false }
 serde = { version = "1", default-features = false, features = ["alloc"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 chrono = { version = "0.4", default-features = false, features = ["alloc","serde"] }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
-async-trait = "0.1"
-bytes = { version = "1", default-features = false }
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 send-future = "0.1"
+trait-variant = "0.1"
 # extensions-save start
 aes = {version = "0.8", optional = true}
 cbc = {version = "0.1", optional = true}

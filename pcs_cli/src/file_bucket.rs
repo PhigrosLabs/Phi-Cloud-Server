@@ -1,10 +1,8 @@
-use async_trait::async_trait;
-use bytes::Bytes;
-use futures::{Stream, StreamExt};
 use pcs_core::types::file_bucket::{FileBucket, MultipartUpload, ObjectMetadata, UploadedPart};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
 
 fn compute_etag(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -24,11 +22,11 @@ fn sanitize_key(key: &str) -> Result<String, std::io::Error> {
 }
 
 #[derive(Clone)]
-pub struct FileFileBucket {
+pub struct LocalFileBucket {
     base_path: PathBuf,
 }
 
-impl FileFileBucket {
+impl LocalFileBucket {
     pub fn new(base_path: PathBuf) -> Self {
         Self { base_path }
     }
@@ -88,7 +86,6 @@ impl FileMultipartUpload {
     }
 }
 
-#[async_trait]
 impl MultipartUpload for FileMultipartUpload {
     type Error = std::io::Error;
 
@@ -158,13 +155,20 @@ impl MultipartUpload for FileMultipartUpload {
     }
 }
 
-#[async_trait]
-impl FileBucket for FileFileBucket {
+fn map_chunk(result: Result<bytes::Bytes, std::io::Error>) -> Result<Vec<u8>, std::io::Error> {
+    result.map(|b| b.to_vec())
+}
+
+impl FileBucket for LocalFileBucket {
     type MultipartUpload = FileMultipartUpload;
     type Error = std::io::Error;
+    type Stream = futures::stream::Map<
+        ReaderStream<tokio::fs::File>,
+        fn(Result<bytes::Bytes, std::io::Error>) -> Result<Vec<u8>, std::io::Error>,
+    >;
 
-    async fn head(&self, key: impl Into<String> + Send) -> Result<ObjectMetadata, Self::Error> {
-        let key = sanitize_key(&key.into())?;
+    async fn head(&self, key: &str) -> Result<ObjectMetadata, Self::Error> {
+        let key = sanitize_key(key)?;
         let path = self.object_path(&key);
         let meta = tokio::fs::metadata(&path).await?;
 
@@ -187,33 +191,29 @@ impl FileBucket for FileFileBucket {
         Ok(ObjectMetadata::new(key, etag, meta.len()))
     }
 
-    async fn get(
-        &self,
-        key: impl Into<String> + Send,
-    ) -> Result<impl Stream<Item = Bytes> + Send + Unpin + 'static, Self::Error> {
-        use tokio_util::io::ReaderStream;
+    async fn get(&self, key: &str) -> Result<Self::Stream, Self::Error> {
+        use futures::StreamExt;
 
-        let key = sanitize_key(&key.into())?;
+        let key = sanitize_key(key)?;
         let path = self.object_path(&key);
         let file = tokio::fs::File::open(&path).await?;
 
-        Ok(ReaderStream::new(file).map(|result| match result {
-            Ok(bytes) => bytes,
-            Err(_) => Bytes::new(),
-        }))
+        let stream = ReaderStream::new(file).map(
+            map_chunk
+                as fn(Result<bytes::Bytes, std::io::Error>) -> Result<Vec<u8>, std::io::Error>,
+        );
+
+        Ok(stream)
     }
 
-    async fn delete(&self, key: impl Into<String> + Send) -> Result<(), Self::Error> {
-        let key = sanitize_key(&key.into())?;
+    async fn delete(&self, key: &str) -> Result<(), Self::Error> {
+        let key = sanitize_key(key)?;
         let path = self.object_path(&key);
         tokio::fs::remove_file(&path).await
     }
 
-    async fn create_multipart_upload(
-        &self,
-        key: impl Into<String> + Send,
-    ) -> Result<String, Self::Error> {
-        let key = sanitize_key(&key.into())?;
+    async fn create_multipart_upload(&self, key: &str) -> Result<String, Self::Error> {
+        let key = sanitize_key(key)?;
         let upload_id = crate::backend::random_id();
 
         let parts_dir = self.parts_dir();
@@ -233,13 +233,11 @@ impl FileBucket for FileFileBucket {
 
     async fn get_multipart_upload(
         &self,
-        key: impl Into<String> + Send,
-        upload_id: impl Into<String> + Send,
+        key: &str,
+        upload_id: &str,
     ) -> Result<Self::MultipartUpload, Self::Error> {
-        let key = sanitize_key(&key.into())?;
-        let upload_id = upload_id.into();
-
-        let state_data = tokio::fs::read_to_string(&self.state_path(&upload_id)).await?;
+        let key = sanitize_key(key)?;
+        let state_data = tokio::fs::read_to_string(&self.state_path(upload_id)).await?;
         let state: UploadState = serde_json::from_str(&state_data)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
@@ -252,17 +250,13 @@ impl FileBucket for FileFileBucket {
 
         Ok(FileMultipartUpload {
             base_path: self.base_path.clone(),
-            upload_id,
+            upload_id: upload_id.to_string(),
             state,
         })
     }
 
-    async fn put(
-        &self,
-        key: impl Into<String> + Send,
-        data: Vec<u8>,
-    ) -> Result<ObjectMetadata, Self::Error> {
-        let key = sanitize_key(&key.into())?;
+    async fn put(&self, key: &str, data: Vec<u8>) -> Result<ObjectMetadata, Self::Error> {
+        let key = sanitize_key(key)?;
         let path = self.object_path(&key);
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;

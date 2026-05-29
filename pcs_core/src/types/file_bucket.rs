@@ -1,11 +1,10 @@
-use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
-use async_trait::async_trait;
-use bytes::Bytes;
 use core::error::Error;
 use core::fmt::Debug;
-use futures::Stream;
+use trait_variant::make;
+
+use crate::types::ByteStream;
 
 #[derive(Debug)]
 pub struct UploadedPart {
@@ -39,7 +38,7 @@ impl ObjectMetadata {
     }
 }
 
-#[async_trait]
+#[make(Send)]
 pub trait MultipartUpload: Send + Sync {
     type Error: Error + Send;
 
@@ -54,34 +53,25 @@ pub trait MultipartUpload: Send + Sync {
     async fn abort(&mut self) -> Result<(), Self::Error>;
 }
 
-#[async_trait]
+#[make(Send)]
 pub trait FileBucket: Sync + Send + 'static {
     type MultipartUpload: MultipartUpload;
     type Error: Error + Send;
+    type Stream: ByteStream;
 
-    async fn head(&self, key: impl Into<String> + Send) -> Result<ObjectMetadata, Self::Error>;
+    async fn head(&self, key: &str) -> Result<ObjectMetadata, Self::Error>;
 
-    async fn get(
-        &self,
-        key: impl Into<String> + Send,
-    ) -> Result<impl Stream<Item = Bytes> + Send + Unpin + 'static, Self::Error>;
+    async fn get(&self, key: &str) -> Result<Self::Stream, Self::Error>;
 
-    async fn delete(&self, key: impl Into<String> + Send) -> Result<(), Self::Error>;
+    async fn delete(&self, key: &str) -> Result<(), Self::Error>;
 
-    async fn create_multipart_upload(
-        &self,
-        key: impl Into<String> + Send,
-    ) -> Result<String, Self::Error>;
+    async fn create_multipart_upload(&self, key: &str) -> Result<String, Self::Error>;
 
     async fn get_multipart_upload(
         &self,
-        key: impl Into<String> + Send,
-        upload_id: impl Into<String> + Send,
+        key: &str,
+        upload_id: &str,
     ) -> Result<Self::MultipartUpload, Self::Error>;
 
-    async fn put(
-        &self,
-        key: impl Into<String> + Send,
-        data: Vec<u8>,
-    ) -> Result<ObjectMetadata, Self::Error>;
+    async fn put(&self, key: &str, data: Vec<u8>) -> Result<ObjectMetadata, Self::Error>;
 }

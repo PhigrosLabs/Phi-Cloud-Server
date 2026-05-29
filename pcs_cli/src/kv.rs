@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use redb::{Database, ReadableDatabase, TableDefinition};
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
@@ -23,7 +22,6 @@ pub struct RedbKVTable {
     table_name: String,
 }
 
-#[async_trait]
 impl KVStorage for RedbKVStorage {
     type Table = RedbKVTable;
     type Error = redb::Error;
@@ -36,7 +34,6 @@ impl KVStorage for RedbKVStorage {
     }
 }
 
-#[async_trait]
 impl KVTable for RedbKVTable {
     type Error = redb::Error;
 

@@ -3,6 +3,7 @@ name = "pcs_cli_debug"
 version = "0.1.0"
 edition = "2024"
 authors = ["Shua-github <CHA_shua@outlook.com>"]
+license = "MIT"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

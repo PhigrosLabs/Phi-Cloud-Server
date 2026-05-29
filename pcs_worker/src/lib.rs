@@ -7,10 +7,8 @@ use kv::WorkerKVStorage;
 use pcs_core::handler::PhiCloudServer;
 use worker::*;
 
-use crate::utils::stream_to_vec;
-
 #[event(fetch)]
-async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
+async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let webhook_url = env
         .var("WEBHOOK_URL")
         .ok()
@@ -20,7 +18,7 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
     let server_url = env
         .var("SERVER_URL")
         .map(|s| s.to_string())
-        .unwrap_or_else(|_| "https".into());
+        .unwrap_or_else(|_| "http://127.0.0.1:8787".into());
 
     let db_kv_namespace = env
         .var("DB_KV_NAMESPACE")
@@ -48,14 +46,23 @@ async fn fetch(req: HttpRequest, env: Env, _ctx: Context) -> Result<Response> {
         db_kv,
         r2,
         webhook: webhook_url,
-        server_url,
         user_count_limit,
     };
 
-    let server = PhiCloudServer::new(backend);
-    let (parts, body) = req.into_parts();
-    let new_req = http::Request::from_parts(parts, stream_to_vec(body).await?);
-    let resp = server.handler(new_req).await;
+    let body = req.bytes().await?;
+    let method = req.method().to_string();
+    let path = req.path().to_string();
+    let st = req.headers().get("X-LC-Session").ok().and_then(|h| h);
+
+    let pcs_req = pcs_core::types::Request {
+        method: &method,
+        path: &path,
+        body,
+        session_token: st.as_deref(),
+        server_url: &server_url,
+    };
+
+    let resp = PhiCloudServer::handler(&backend, pcs_req).await;
 
     utils::build_response(resp).await
 }

@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pcs_core::{
     types::{
         backend::{PCSBackend, UserCheckResult},
@@ -8,20 +7,19 @@ use pcs_core::{
     user::AuthData,
 };
 
-use crate::file_bucket::FileFileBucket;
+use crate::file_bucket::LocalFileBucket;
 use crate::kv::RedbKVStorage;
 
 pub struct CliBackend {
     pub kv: RedbKVStorage,
-    pub fb: FileFileBucket,
+    pub fb: LocalFileBucket,
     pub webhook: Option<String>,
     pub server_url: String,
     pub http_client: reqwest::Client,
 }
 
-#[async_trait]
 impl PCSBackend for CliBackend {
-    type FB = FileFileBucket;
+    type FB = LocalFileBucket;
     type KV = RedbKVStorage;
 
     fn fb(&self) -> &Self::FB {
@@ -71,10 +69,6 @@ impl PCSBackend for CliBackend {
             .json(&event)
             .send()
             .await;
-    }
-
-    fn server_url(&self) -> String {
-        self.server_url.clone()
     }
 
     fn random_id(&self) -> String {
