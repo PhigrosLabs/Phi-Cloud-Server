@@ -8,13 +8,18 @@ use alloc::{
 };
 use base64::Engine;
 use core::cmp::Ordering;
-use phi_save_codec::{game_progress::Money, game_record::{LevelRecord, SongRecord}};
+use phi_save_codec::{
+    game_progress::Money,
+    game_record::{LevelRecord, SongRecord},
+};
 use serde::de::DeserializeOwned;
 
 use crate::{
     extensions::b30::{
         asset::*,
-        template::{CardData, Difficulty, estimate_song_name_font_size, estimate_song_name_fit_width},
+        template::{
+            CardData, Difficulty, estimate_song_name_fit_width, estimate_song_name_font_size,
+        },
         types::*,
     },
     types::{PCSBackend, PCSError},
@@ -31,15 +36,15 @@ pub fn get_rating_img(level_record: &LevelRecord) -> &'static [u8] {
         RATING_PHI
     } else if level_record.fc {
         RATING_FC
-    } else if level_record.score >= 0_960_000 {
+    } else if level_record.score >= 960_000 {
         RATING_V
-    } else if level_record.score >= 0_920_000 {
+    } else if level_record.score >= 920_000 {
         RATING_S
-    } else if level_record.score >= 0_880_000 {
+    } else if level_record.score >= 880_000 {
         RATING_A
-    } else if level_record.score >= 0_820_000 {
+    } else if level_record.score >= 820_000 {
         RATING_B
-    } else if level_record.score >= 0_700_000 {
+    } else if level_record.score >= 700_000 {
         RATING_C
     } else {
         RATING_F
@@ -248,7 +253,7 @@ impl DiffKind {
         }
     }
 
-    pub fn to_template(&self) -> Difficulty {
+    pub fn to_template(self) -> Difficulty {
         match self {
             DiffKind::At => Difficulty::At,
             DiffKind::In => Difficulty::In,
@@ -276,7 +281,7 @@ pub fn collect_all_levels(
                     continue;
                 }
                 if let Some(song_level) = song_info.levels.get(kind.as_str()) {
-                    let rks = single_rks(&level, song_level.difficulty);
+                    let rks = single_rks(level, song_level.difficulty);
                     results.push((*kind, level.clone(), rks));
                 }
             }
@@ -321,8 +326,8 @@ pub fn compute_b30(
             phi += 1;
         }
     }
-    for i in 0..n.min(27) {
-        mask[i] = true;
+    for item in mask.iter_mut().take(n.min(27)) {
+        *item = true;
     }
 
     let total_rks = if n == 0 {

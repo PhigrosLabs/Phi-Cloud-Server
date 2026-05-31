@@ -83,19 +83,13 @@ impl PCSBackend for CliBackend {
 
     async fn call_phi_info_router(&self, path: &str) -> Result<PhiInfoResponse, Self::Error> {
         if self.phi_info_url.is_empty() {
-            return Err(PCSError::internal_error(
-                "phi_info_url is not configured",
-            ));
+            return Err(PCSError::internal_error("phi_info_url is not configured"));
         }
 
         if let Some(base) = self.phi_info_url.strip_prefix("file://") {
             let file_path = std::path::PathBuf::from(base).join(path.trim_start_matches('/'));
             let data = std::fs::read(&file_path).map_err(|e| {
-                PCSError::internal_error(format!(
-                    "failed to read {}: {}",
-                    file_path.display(),
-                    e
-                ))
+                PCSError::internal_error(format!("failed to read {}: {}", file_path.display(), e))
             })?;
             let mime = guess_mime_from_path(path);
             Ok(PhiInfoResponse {
@@ -107,12 +101,10 @@ impl PCSBackend for CliBackend {
             || self.phi_info_url.starts_with("https://")
         {
             let url = join_http_url(&self.phi_info_url, path);
-            let resp = self
-                .http_client
-                .get(&url)
-                .send()
-                .await
-                .map_err(|e| PCSError::internal_error(format!("phi_info request failed: {}", e)))?;
+            let resp =
+                self.http_client.get(&url).send().await.map_err(|e| {
+                    PCSError::internal_error(format!("phi_info request failed: {}", e))
+                })?;
 
             let code = resp.status().as_u16();
             let mime = resp
@@ -160,7 +152,6 @@ pub(crate) fn random_id() -> String {
 
     String::from_utf8_lossy(&out).to_string()
 }
-
 
 fn guess_mime_from_path(path: &str) -> String {
     let ext = std::path::Path::new(path)

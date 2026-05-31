@@ -1,5 +1,9 @@
 use pcs_core::types::{
-    backend::{PCSBackend, UserCheckResult}, error::PCSError, event::Event, file_bucket::{FileBucket, ObjectMetadata, UploadedPart}, kv::KVTable
+    backend::{PCSBackend, UserCheckResult},
+    error::PCSError,
+    event::Event,
+    file_bucket::{FileBucket, ObjectMetadata, UploadedPart},
+    kv::KVTable,
 };
 use pcs_core::user::AuthData;
 use worker::*;

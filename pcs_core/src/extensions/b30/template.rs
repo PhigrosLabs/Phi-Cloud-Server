@@ -82,7 +82,7 @@ pub(crate) fn estimate_song_name_fit_width(name: &str) -> Option<u32> {
     let font_size = estimate_song_name_font_size(name) as f32;
     let estimated_width = name.chars().map(estimated_char_em_width).sum::<f32>() * font_size;
 
-    if estimated_width > SONG_NAME_MAX_WIDTH as f32{
+    if estimated_width > SONG_NAME_MAX_WIDTH as f32 {
         Some(SONG_NAME_MAX_WIDTH)
     } else {
         None

@@ -29,14 +29,17 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
 
     let gs_ids: Vec<String> = games_by_user
         .get(&session.object_id)
-        .await.map_db_err()?
+        .await
+        .map_db_err()?
         .unwrap_or_default();
     if gs_ids.is_empty() {
         return Err(PCSError::not_found("no game saves found"));
     }
 
     let gs: GameSave = game_saves
-        .get(&gs_ids[0]).await.map_db_err()?
+        .get(&gs_ids[0])
+        .await
+        .map_db_err()?
         .ok_or_else(PCSError::db_not_found)?;
     let fb = backend.fb();
     let stream = fb.get(&gs.game_file_object_id).await.map_internal_err()?;
@@ -44,10 +47,18 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
     let provider = SaveProvider::parse(&data)
         .map_err(|e| PCSError::bad_request(format!("invalid save data: {:?}", e)))?;
 
-    let game_record = provider.get_game_record().map_err(|e| PCSError::internal_error(e.to_string()))?;
-    let user_info = provider.get_user().map_err(|e| PCSError::internal_error(e.to_string()))?;
-    let game_progress = provider.get_game_progress().map_err(|e| PCSError::internal_error(e.to_string()))?;
-    let settings = provider.get_settings().map_err(|e| PCSError::internal_error(e.to_string()))?;
+    let game_record = provider
+        .get_game_record()
+        .map_err(|e| PCSError::internal_error(e.to_string()))?;
+    let user_info = provider
+        .get_user()
+        .map_err(|e| PCSError::internal_error(e.to_string()))?;
+    let game_progress = provider
+        .get_game_progress()
+        .map_err(|e| PCSError::internal_error(e.to_string()))?;
+    let settings = provider
+        .get_settings()
+        .map_err(|e| PCSError::internal_error(e.to_string()))?;
 
     let fetcher = PhiInfoFetcher::new(backend).await?;
     let songs = fetcher.get_songs().await?;
@@ -70,7 +81,8 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
         &settings.device_name.0,
         &date_str,
         total_rks,
-    ).await?;
+    )
+    .await?;
 
     let template = B30Template {
         bg_link: &info.bg_uri,
