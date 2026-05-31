@@ -65,14 +65,22 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
     let song_map: BTreeMap<String, SongInfo> =
         songs.into_iter().map(|s| (s.id.clone(), s)).collect();
 
-    let (all_30, total_rks) = compute_b30(&song_map, &game_record.songs);
+    let (p3, b27, total_rks) = compute_b30(&song_map, &game_record.songs);
+
+    // p3（前3个AP）+ b27（前27个成绩），可重叠，共30张卡片
+    let mut all_30: Vec<BestPlay> = Vec::with_capacity(30);
+    all_30.extend(p3);
+    all_30.extend(b27);
 
     let owned_cards = build_b30_cards(&fetcher, &song_map, &all_30).await?;
     let cards = into_card_data(&owned_cards);
 
     let utc_time: DateTime<Utc> = gs.updated_at;
     let offset_eight_hours = FixedOffset::east_opt(8 * 3600).unwrap();
-    let date_str = utc_time.with_timezone(&offset_eight_hours).to_rfc3339();
+    let date_str = utc_time
+        .with_timezone(&offset_eight_hours)
+        .format("%Y-%m-%d %H:%M")
+        .to_string();
     let info = build_personal_info(
         &fetcher,
         &user_info.background.0,

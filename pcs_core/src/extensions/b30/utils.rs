@@ -293,7 +293,7 @@ pub fn collect_all_levels(
 pub fn compute_b30(
     song_map: &BTreeMap<String, SongInfo>,
     songs: &[(String, SongRecord)],
-) -> (Vec<BestPlay>, f32) {
+) -> (Vec<BestPlay>, Vec<BestPlay>, f32) {
     let mut all_plays: Vec<BestPlay> = Vec::new();
 
     for (song_id, song_record) in songs {
@@ -315,50 +315,44 @@ pub fn compute_b30(
 
     let n = all_plays.len();
 
-    let mut mask = alloc::vec![false; n];
-    let mut phi = 0u32;
-    for (i, p) in all_plays.iter().enumerate() {
-        if phi >= 3 {
-            break;
-        }
+    // p3: 取前3个AP成绩（与b27独立，可重叠）
+    let mut p3: Vec<BestPlay> = Vec::with_capacity(3);
+    for p in all_plays.iter() {
         if p.level_record.score == 1_000_000 {
-            mask[i] = true;
-            phi += 1;
+            p3.push(BestPlay {
+                song_id: p.song_id.clone(),
+                difficulty: p.difficulty,
+                level_record: p.level_record.clone(),
+                rks: p.rks,
+            });
+            if p3.len() >= 3 {
+                break;
+            }
         }
-    }
-    for item in mask.iter_mut().take(n.min(27)) {
-        *item = true;
     }
 
+    // b27: 取前27个成绩（与p3独立，可重叠）
+    let b27: Vec<BestPlay> = all_plays
+        .iter()
+        .take(27)
+        .map(|p| BestPlay {
+            song_id: p.song_id.clone(),
+            difficulty: p.difficulty,
+            level_record: p.level_record.clone(),
+            rks: p.rks,
+        })
+        .collect();
+
+    // total_rks: 所有成绩中最好的30个的平均值
     let total_rks = if n == 0 {
         0.0
     } else {
-        let sum: f32 = mask
-            .iter()
-            .copied()
-            .enumerate()
-            .filter(|(_, m)| *m)
-            .map(|(i, _)| all_plays[i].rks)
-            .sum();
+        let top_n = n.min(30);
+        let sum: f32 = all_plays.iter().take(top_n).map(|p| p.rks).sum();
         sum / 30.0
     };
 
-    let mut selected: Vec<usize> = mask
-        .iter()
-        .copied()
-        .enumerate()
-        .filter(|(_, m)| *m)
-        .map(|(i, _)| i)
-        .collect();
-    selected.sort_unstable_by(|a: &usize, b: &usize| b.cmp(a));
-
-    let mut all_30 = Vec::with_capacity(selected.len());
-    for idx in selected {
-        all_30.push(all_plays.swap_remove(idx));
-    }
-    all_30.reverse();
-
-    (all_30, total_rks)
+    (p3, b27, total_rks)
 }
 
 pub struct PlayCardOwned {
