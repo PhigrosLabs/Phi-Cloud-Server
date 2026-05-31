@@ -1,6 +1,6 @@
 use pcs_core::{
     types::{
-        backend::{PCSBackend, UserCheckResult},
+        backend::{PCSBackend, PhiInfoResponse, UserCheckResult},
         error::PCSError,
         event::Event,
     },
@@ -15,12 +15,14 @@ pub struct CliBackend {
     pub fb: LocalFileBucket,
     pub webhook: Option<String>,
     pub server_url: String,
+    pub phi_info_url: String,
     pub http_client: reqwest::Client,
 }
 
 impl PCSBackend for CliBackend {
     type FB = LocalFileBucket;
     type KV = RedbKVStorage;
+    type Error = PCSError;
 
     fn fb(&self) -> &Self::FB {
         &self.fb
@@ -78,6 +80,63 @@ impl PCSBackend for CliBackend {
     fn utc_now(&self) -> chrono::DateTime<chrono::Utc> {
         chrono::Utc::now()
     }
+
+    async fn call_phi_info_router(&self, path: &str) -> Result<PhiInfoResponse, Self::Error> {
+        if self.phi_info_url.is_empty() {
+            return Err(PCSError::internal_error(
+                "phi_info_url is not configured",
+            ));
+        }
+
+        if let Some(base) = self.phi_info_url.strip_prefix("file://") {
+            let file_path = std::path::PathBuf::from(base).join(path.trim_start_matches('/'));
+            let data = std::fs::read(&file_path).map_err(|e| {
+                PCSError::internal_error(format!(
+                    "failed to read {}: {}",
+                    file_path.display(),
+                    e
+                ))
+            })?;
+            let mime = guess_mime_from_path(path);
+            Ok(PhiInfoResponse {
+                code: 200,
+                mime,
+                data,
+            })
+        } else if self.phi_info_url.starts_with("http://")
+            || self.phi_info_url.starts_with("https://")
+        {
+            let url = join_http_url(&self.phi_info_url, path);
+            let resp = self
+                .http_client
+                .get(&url)
+                .send()
+                .await
+                .map_err(|e| PCSError::internal_error(format!("phi_info request failed: {}", e)))?;
+
+            let code = resp.status().as_u16();
+            let mime = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/octet-stream")
+                .to_string();
+            let data = resp
+                .bytes()
+                .await
+                .map_err(|e| {
+                    PCSError::internal_error(format!("phi_info read response failed: {}", e))
+                })?
+                .to_vec();
+
+            Ok(PhiInfoResponse { code, mime, data })
+        } else {
+            Err(PCSError::internal_error(format!(
+                "unsupported phi_info_url scheme: {}",
+                self.phi_info_url
+            )))
+        }
+    }
 }
 
 pub(crate) fn random_id() -> String {
@@ -100,4 +159,33 @@ pub(crate) fn random_id() -> String {
     }
 
     String::from_utf8_lossy(&out).to_string()
+}
+
+
+fn guess_mime_from_path(path: &str) -> String {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    match ext {
+        "json" => "application/json".into(),
+        "png" => "image/png".into(),
+        "jpg" | "jpeg" => "image/jpeg".into(),
+        "svg" => "image/svg+xml".into(),
+        "webp" => "image/webp".into(),
+        "gif" => "image/gif".into(),
+        "mp3" => "audio/mpeg".into(),
+        "ogg" => "audio/ogg".into(),
+        "wav" => "audio/wav".into(),
+        "txt" => "text/plain; charset=utf-8".into(),
+        "html" => "text/html; charset=utf-8".into(),
+        _ => "application/octet-stream".into(),
+    }
+}
+
+fn join_http_url(base: &str, path: &str) -> String {
+    let base = base.trim_end_matches('/');
+    let path = path.trim_start_matches('/');
+    format!("{}/{}", base, path)
 }

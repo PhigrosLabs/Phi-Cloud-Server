@@ -126,6 +126,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         server_url: config.server_url.clone(),
 
+        phi_info_url: config.phi_info_url.clone(),
+
         http_client: reqwest::Client::new(),
     };
 

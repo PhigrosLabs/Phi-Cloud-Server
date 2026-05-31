@@ -1,4 +1,5 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use trait_variant::make;
@@ -23,10 +24,18 @@ impl Default for UserCheckResult {
     }
 }
 
+pub struct PhiInfoResponse {
+    pub code: u16,
+    pub mime: String,
+    pub data: Vec<u8>,
+}
+
 #[make(Send)]
 pub trait PCSBackend: Send + Sync + 'static {
     type FB: FileBucket;
     type KV: KVStorage;
+    #[cfg(feature = "extension_query_base")]
+    type Error: core::error::Error;
 
     fn fb(&self) -> &Self::FB;
     fn kv(&self) -> &Self::KV;
@@ -34,4 +43,7 @@ pub trait PCSBackend: Send + Sync + 'static {
     async fn emit_event(&self, event: Event);
     fn random_id(&self) -> String;
     fn utc_now(&self) -> DateTime<Utc>;
+
+    #[cfg(feature = "extension_query_base")]
+    async fn call_phi_info_router(&self, path: &str) -> Result<PhiInfoResponse, Self::Error>;
 }

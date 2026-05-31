@@ -1,0 +1,99 @@
+{%- let rows = (cards.len() + 2) / 3 -%}
+{%- let canvas_height = 286 + rows * 124 -%}
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="{{ canvas_height }}" viewBox="0 0 1200 {{ canvas_height }}" font-family="'PhigrosFont', Arial, sans-serif">
+  <defs>
+    <style>
+      @font-face {
+        font-family: "PhigrosFont";
+        src: url("{{ font_link }}");
+      }
+    </style>
+    <filter id="bg-blur" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+    <clipPath id="icon-clip">
+      <rect x="118" y="75" width="120" height="120" rx="30"/>
+    </clipPath>
+    <pattern id="stripes" width="14.14" height="14.14" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <rect x="0" y="0" width="7.07" height="14.14" fill="white"/>
+    </pattern>
+    {%- for card in cards %}
+    {%- if let Some(c) = card.as_ref() %}
+    <clipPath id="c-{{ c.index }}" clipPathUnits="objectBoundingBox"><polygon points="1,0 0.818,1 0,1 0.182,0"/></clipPath>
+    <clipPath id="r-{{ c.index }}" clipPathUnits="objectBoundingBox"><polygon points="1,0 0.818,1 0,1 0.182,0"/></clipPath>
+    <clipPath id="l-{{ c.index }}" clipPathUnits="objectBoundingBox"><polygon points="1,0 0.847,1 0,1 0.153,0"/></clipPath>
+    {%- endif %}
+    {%- endfor %}
+  </defs>
+
+  <image href="{{ bg_link }}" x="0" y="0" width="1200" height="{{ canvas_height }}" preserveAspectRatio="xMidYMid slice" filter="url(#bg-blur)"/>
+  <g>
+    <rect x="100" y="60" width="450" height="150" rx="36" fill="rgba(0,0,0,0.5)"/>
+    <image href="{{ icon_link }}" x="118" y="75" width="120" height="120" preserveAspectRatio="xMidYMid slice" clip-path="url(#icon-clip)"/>
+    <text x="265" y="116" fill="white" font-size="30" text-anchor="start" dominant-baseline="middle">Phigros</text>
+    <text x="265" y="154" fill="white" font-size="30" text-anchor="start" dominant-baseline="middle">RankingScore查询</text>
+
+    <rect x="750" y="60" width="350" height="150" rx="36" fill="rgba(0,0,0,0.5)"/>
+    <text x="786" y="84" fill="white" font-size="16" dominant-baseline="middle">Player: {{ player_id }}</text>
+    <text x="786" y="106" fill="white" font-size="16" dominant-baseline="middle">RankingScore: {{ rks }}</text>
+
+    <text x="786" y="128" fill="white" font-size="16" dominant-baseline="middle">ChallengeMode:</text>
+    <image href="{{ challenge_link }}"
+          x="902"
+          y="111"
+          width="65"
+          height="32"
+          preserveAspectRatio="xMidYMid meet" />
+    <text x="935"
+          y="128"
+          fill="white"
+          font-size="16"
+          text-anchor="middle"
+          dominant-baseline="middle">
+      {{ challenge_mode_rank }}
+    </text>
+
+    <text x="786" y="150" fill="white" font-size="16" dominant-baseline="middle">Data: {{ data }}</text>
+    <text x="786" y="172" fill="white" font-size="16" dominant-baseline="middle">Device: {{ device }}</text>
+    <text x="786" y="194" fill="white" font-size="16" dominant-baseline="middle">Date: {{ date }}</text>
+  </g>
+
+  {%- for card in cards %}
+  {%- let x = 32 + (loop.index0 % 3) * 400 %}
+  {%- let y = 270 + (loop.index0 / 3) * 124 %}
+  <g>
+    {%- if let Some(c) = card.as_ref() %}
+    <clipPath id="title-{{ c.index }}">
+      <rect x="{{ x + 156 }}" y="{{ y + 5 }}" width="180" height="24"/>
+    </clipPath>
+    <rect x="{{ x + 146 }}" y="{{ y + 5 }}" width="200" height="90" fill="{{ c.info_bg }}"/>
+    <rect x="{{ x + 343 }}" y="{{ y + 5 }}" width="3" height="90" fill="{{ c.info_border }}"/>
+    <text x="{{ x + 146 + 34 + 67 + 10 }}" y="{{ y + 5 + 14 }}" fill="white" font-size="{{ c.name_font_size }}" text-anchor="middle" dominant-baseline="middle" clip-path="url(#title-{{ c.index }})"{% if let Some(width) = c.name_fit_width %} textLength="{{ width }}" lengthAdjust="spacingAndGlyphs"{% endif %}>{{ c.name }}</text>
+    <image href="{{ c.rating_link }}" x="{{ x + 146 + 24 }}" y="{{ y + 5 + 42 }}" width="35" height="35" preserveAspectRatio="xMidYMid meet"/>
+    <text x="{{ x + 146 + 62 + 52 }}" y="{{ y + 5 + 28 + 15 }}" fill="white" font-size="25" text-anchor="middle" dominant-baseline="middle">{{ c.score }}</text>
+    <line x1="{{ x + 146 + 62 + 4 }}" y1="{{ y + 5 + 28 + 32 }}" x2="{{ x + 146 + 62 + 100 }}" y2="{{ y + 5 + 28 + 32 }}" stroke="white" stroke-width="2"/>
+    <text x="{{ x + 146 + 62 + 52 }}" y="{{ y + 5 + 28 + 49 }}" fill="white" font-size="16" text-anchor="middle" dominant-baseline="middle">{{ c.acc }}</text>
+    <image href="{{ c.illustration_link }}" x="{{ x }}" y="{{ y }}" width="180" height="100" preserveAspectRatio="none" clip-path="url(#c-{{ c.index }})"/>
+    <g transform="translate({{ x - 23 }}, {{ y + 67 }})">
+      <polygon points="68,0 55.6,33 0,33 12.4,0" fill="{{ c.rank_color }}"/>
+      <text x="34" y="10" fill="white" font-size="12" text-anchor="middle" dominant-baseline="middle">{{ c.rank }}</text>
+      <text x="32" y="25" fill="white" font-size="13" text-anchor="middle" dominant-baseline="middle">{{ c.rks }}</text>
+    </g>
+    <g transform="translate({{ x - 2 }}, {{ y + 4 }})">
+      <polygon points="36,0 30.5,16 0,16 5.5,0" fill="white"/>
+      <text x="18" y="9" fill="black" font-size="9" text-anchor="middle" dominant-baseline="middle">{{ c.index }}</text>
+    </g>
+    {%- else %}
+    <rect x="{{ x }}" y="{{ y }}" width="360" height="100" fill="rgba(112,112,112,0.4)"/>
+    <rect x="{{ x + 18 }}" y="{{ y + 100 - 15 - 20 }}" width="322" height="20" fill="url(#stripes)" stroke="white" stroke-width="3"/>
+    <rect x="{{ x + 18 }}" y="{{ y + 8 }}" width="66" height="5" fill="white"/>
+    <text x="{{ x + 18 }}" y="{{ y + 32 }}" fill="white" font-size="25" dominant-baseline="middle">TIME_OUT</text>
+    <text x="{{ x + 18 }}" y="{{ y + 57 }}" fill="#00B0F0" font-size="10" dominant-baseline="middle">&gt;&gt;&gt; PhigrOS Server Finding GameRecord.songs[n]</text>
+    <polyline points="{{ x + 15 }},{{ y + 8 }} {{ x + 8 }},{{ y + 8 }} {{ x + 8 }},{{ y + 15 }}" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="{{ x + 360 - 15 }},{{ y + 8 }} {{ x + 360 - 8 }},{{ y + 8 }} {{ x + 360 - 8 }},{{ y + 15 }}" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="{{ x + 15 }},{{ y + 100 - 8 }} {{ x + 8 }},{{ y + 100 - 8 }} {{ x + 8 }},{{ y + 100 - 15 }}" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="{{ x + 360 - 15 }},{{ y + 100 - 8 }} {{ x + 360 - 8 }},{{ y + 100 - 8 }} {{ x + 360 - 8 }},{{ y + 100 - 15 }}" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    {%- endif %}
+  </g>
+  {%- endfor %}
+</svg>

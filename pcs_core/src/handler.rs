@@ -162,6 +162,17 @@ impl PhiCloudServer {
             // =========================
             // Extension routes
             // =========================
+            #[cfg(feature = "extension_query_b30")]
+            ("GET", ["extension", "b30", session_token]) => {
+                use crate::extensions::b30::handler::handle_b30_extension_get;
+                let svg = handle_b30_extension_get(backend, session_token).await?;
+                Ok(Response {
+                    status_code: 200,
+                    content_type: Some("image/svg+xml; charset=utf-8".into()),
+                    body: Some(Body::Bytes(svg.into_bytes())),
+                })
+            }
+
             #[cfg(feature = "extension_save")]
             ("GET", ["extension", "save", session_token]) => {
                 use crate::extensions::save::handler::handle_save_extension_get;

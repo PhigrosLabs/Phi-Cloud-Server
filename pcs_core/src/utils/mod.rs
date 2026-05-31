@@ -29,6 +29,7 @@ impl ToRfc3339Z for DateTime<Utc> {
     }
 }
 
+#[allow(dead_code)]
 pub async fn stream_to_bytes<S: ByteStream>(stream: S) -> Result<Vec<u8>, S::Error> {
     let chunks: Vec<Vec<u8>> = stream.try_collect().await?;
     let total_len: usize = chunks.iter().map(|c| c.len()).sum();

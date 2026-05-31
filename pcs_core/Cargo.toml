@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Shua-github <CHA_shua@outlook.com>"]
 license = "MIT"
+rust-version = "1.88.0"
 
 [lib]
 
 [dependencies]
-serde = { version = "1", default-features = false, features = ["alloc"] }
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 chrono = { version = "0.4", default-features = false, features = ["alloc","serde"] }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
@@ -24,7 +25,14 @@ md-5 = { version = "0.11", default-features = false, optional = true }
 hex = { version = "0.4", default-features = false, optional = true, features = ["alloc"] }
 # extensions-save end
 
+# extensions-query start
+askama = { version = "0.16", default-features = false, features = ["alloc", "derive"], optional = true }
+# extensions-query end
+
 [features]
 default = ["extensions"]
-extensions = ["extension_save"]
+extensions = ["extension_save","extension_query"]
 extension_save = ["aes","cbc","shua_zip","phi_save_codec","md-5","hex"]
+extension_query_base = ["extension_save"]
+extension_query = ["extension_query_b30"]
+extension_query_b30 = ["askama","extension_query_base"]
