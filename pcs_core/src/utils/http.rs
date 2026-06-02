@@ -1,7 +1,10 @@
 use serde::Serialize;
 
 use crate::{
-    types::{Body, ByteStream, JSON_CONTENT_TYPE, Response, error::PCSError},
+    types::{
+        Body, ByteStream, JSON_CONTENT_TYPE, Response,
+        error::{ErrorCode, PCSError},
+    },
     utils::MapPCSError,
 };
 
@@ -15,7 +18,7 @@ pub(crate) fn ok<T: Serialize, S: ByteStream>(body: &T) -> Result<Response<S>, P
 
 fn body_from_serialize<T: Serialize, S: ByteStream>(body: &T) -> Result<Option<Body<S>>, PCSError> {
     Ok(Some(Body::Bytes(
-        serde_json::to_vec(body).map_internal_err()?,
+        serde_json::to_vec(body).map_pcs_error(ErrorCode::JSON_SERIALIZE)?,
     )))
 }
 

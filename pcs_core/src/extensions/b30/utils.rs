@@ -22,7 +22,7 @@ use crate::{
         },
         types::*,
     },
-    types::{PCSBackend, PCSError},
+    types::{PCSBackend, PCSError, error::ErrorCode},
     utils::MapPCSError,
 };
 
@@ -92,14 +92,18 @@ impl<'a, T: PCSBackend> PhiInfoFetcher<'a, T> {
         let response = provider
             .call_phi_info_router("/api_info.json")
             .await
-            .map_internal_err()?;
-        let api_info: ApiInfo = serde_json::from_slice(&response.data).map_internal_err()?;
+            .map_pcs_error(ErrorCode::FB_GET)?;
+        let api_info: ApiInfo =
+            serde_json::from_slice(&response.data).map_pcs_error(ErrorCode::JSON_DESERIALIZE)?;
 
         if !api_info.version.starts_with("1.") {
-            return Err(PCSError::internal_error(format!(
-                "PhiInfoFetcher: API version mismatch! Expected 1.*, got {}",
-                api_info.version
-            )));
+            return Err(PCSError::internal_error(
+                ErrorCode::PHI_INFO_VERSION_MISMATCH,
+                format!(
+                    "PhiInfoFetcher: API version mismatch! Expected 1.*, got {}",
+                    api_info.version
+                ),
+            ));
         }
 
         Ok(Self {
@@ -113,8 +117,9 @@ impl<'a, T: PCSBackend> PhiInfoFetcher<'a, T> {
             .provider
             .call_phi_info_router(path)
             .await
-            .map_internal_err()?;
-        let data: R = serde_json::from_slice(&response.data).map_internal_err()?;
+            .map_pcs_error(ErrorCode::FB_GET)?;
+        let data: R =
+            serde_json::from_slice(&response.data).map_pcs_error(ErrorCode::JSON_DESERIALIZE)?;
         Ok(data)
     }
 
@@ -156,7 +161,7 @@ impl<'a, T: PCSBackend> PhiInfoFetcher<'a, T> {
             .provider
             .call_phi_info_router(&path)
             .await
-            .map_internal_err()?;
+            .map_pcs_error(ErrorCode::FB_GET)?;
         Ok((response.mime, response.data))
     }
 
@@ -166,7 +171,7 @@ impl<'a, T: PCSBackend> PhiInfoFetcher<'a, T> {
             .provider
             .call_phi_info_router(&path)
             .await
-            .map_internal_err()?;
+            .map_pcs_error(ErrorCode::FB_GET)?;
         Ok((response.mime, response.data))
     }
 
@@ -176,7 +181,7 @@ impl<'a, T: PCSBackend> PhiInfoFetcher<'a, T> {
             .provider
             .call_phi_info_router(&path)
             .await
-            .map_internal_err()?;
+            .map_pcs_error(ErrorCode::FB_GET)?;
         Ok((response.mime, response.data))
     }
 }
@@ -384,7 +389,7 @@ pub async fn build_b30_cards<T: PCSBackend>(
             fetcher
                 .get_image_asset(&song_info.ill_low_res_path())
                 .await
-                .map_internal_err()?,
+                .map_pcs_error(ErrorCode::FB_GET)?,
         );
 
         let rating_uri = png_data_uri(get_rating_img(&play.level_record));
@@ -473,7 +478,7 @@ pub async fn build_personal_info<T: PCSBackend>(
         fetcher
             .get_image_asset(&ill_low_res_path(user_bg_id))
             .await
-            .map_internal_err()?,
+            .map_pcs_error(ErrorCode::FB_GET)?,
     );
     let icon_uri = png_data_uri(OTHER_ICON);
     let (challenge_bytes, challenge_rank) = get_challenge(challenge_mode_rank);

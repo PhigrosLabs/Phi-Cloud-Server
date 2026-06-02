@@ -12,6 +12,7 @@ use crate::extensions::save::save_provider::SaveProvider;
 use crate::game::model::GameSave;
 use crate::types::{
     PCSBackend, PCSError,
+    error::ErrorCode,
     file_bucket::FileBucket,
     kv::{KVStorage, KVTable},
 };
@@ -24,41 +25,59 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
 ) -> Result<String, PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
     let kv = backend.kv();
-    let games_by_user = kv.open_table("game_saves_by_user").await.map_db_err()?;
-    let game_saves = kv.open_table("game_saves").await.map_db_err()?;
+    let games_by_user = kv
+        .open_table("game_saves_by_user")
+        .await
+        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
+    let game_saves = kv
+        .open_table("game_saves")
+        .await
+        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
 
     let gs_ids: Vec<String> = games_by_user
         .get(&session.object_id)
         .await
-        .map_db_err()?
+        .map_pcs_error(ErrorCode::KV_GET)?
         .unwrap_or_default();
     if gs_ids.is_empty() {
-        return Err(PCSError::not_found("no game saves found"));
+        return Err(PCSError::not_found(
+            ErrorCode::B30_NO_GAME_SAVES_FOUND,
+            "no game saves found",
+        ));
     }
 
     let gs: GameSave = game_saves
         .get(&gs_ids[0])
         .await
-        .map_db_err()?
+        .map_pcs_error(ErrorCode::KV_GET)?
         .ok_or_else(PCSError::db_not_found)?;
     let fb = backend.fb();
-    let stream = fb.get(&gs.game_file_object_id).await.map_internal_err()?;
-    let data = stream_to_bytes(stream).await.map_internal_err()?;
-    let provider = SaveProvider::parse(&data)
-        .map_err(|e| PCSError::bad_request(format!("invalid save data: {:?}", e)))?;
+    let stream = fb
+        .get(&gs.game_file_object_id)
+        .await
+        .map_pcs_error(ErrorCode::FB_GET)?;
+    let data = stream_to_bytes(stream)
+        .await
+        .map_pcs_error(ErrorCode::FB_GET)?;
+    let provider = SaveProvider::parse(&data).map_err(|e| {
+        PCSError::bad_request(
+            ErrorCode::B30_INVALID_SAVE_DATA,
+            format!("invalid save data: {:?}", e),
+        )
+    })?;
 
     let game_record = provider
         .get_game_record()
-        .map_err(|e| PCSError::internal_error(e.to_string()))?;
+        .map_err(|e| PCSError::internal_error(ErrorCode::B30_GET_GAME_RECORD, e.to_string()))?;
     let user_info = provider
         .get_user()
-        .map_err(|e| PCSError::internal_error(e.to_string()))?;
+        .map_err(|e| PCSError::internal_error(ErrorCode::B30_GET_USER, e.to_string()))?;
     let game_progress = provider
         .get_game_progress()
-        .map_err(|e| PCSError::internal_error(e.to_string()))?;
+        .map_err(|e| PCSError::internal_error(ErrorCode::B30_GET_GAME_PROGRESS, e.to_string()))?;
     let settings = provider
         .get_settings()
-        .map_err(|e| PCSError::internal_error(e.to_string()))?;
+        .map_err(|e| PCSError::internal_error(ErrorCode::B30_GET_SETTINGS, e.to_string()))?;
 
     let fetcher = PhiInfoFetcher::new(backend).await?;
     let songs = fetcher.get_songs().await?;
@@ -106,7 +125,10 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
         cards: &cards,
     };
 
-    template
-        .render()
-        .map_err(|e| PCSError::internal_error(format!("template render failed: {}", e)))
+    template.render().map_err(|e| {
+        PCSError::internal_error(
+            ErrorCode::TEMPLATE_RENDER,
+            format!("template render failed: {}", e),
+        )
+    })
 }

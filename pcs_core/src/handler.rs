@@ -4,7 +4,10 @@ use serde::Deserialize;
 
 use crate::{
     file, game,
-    types::*,
+    types::{
+        error::{ErrorCode, PCSError},
+        *,
+    },
     user::{self, AuthData},
     utils::{MapPCSError, created, no_content, ok},
 };
@@ -51,7 +54,8 @@ impl PhiCloudServer {
             // User routes
             // =========================
             ("POST", ["1.1", "users"]) => {
-                let rb: RegisterBody = serde_json::from_slice(&body).map_bad_err()?;
+                let rb: RegisterBody =
+                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 created(&user::handle_register(backend, rb.auth_data.taptap).await?)
             }
 
@@ -60,7 +64,8 @@ impl PhiCloudServer {
             }
 
             ("PUT", ["1.1", "users", obj_id]) | ("PUT", ["1.1", "classes", "_User", obj_id]) => {
-                let params = serde_json::from_slice(&body).map_bad_err()?;
+                let params =
+                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 ok(&user::handle_update(backend, obj_id, params).await?)
             }
 
@@ -77,7 +82,8 @@ impl PhiCloudServer {
             // File routes
             // =========================
             ("POST", ["1.1", "fileTokens"]) => {
-                let params = serde_json::from_slice(&body).map_bad_err()?;
+                let params =
+                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 created(
                     &file::handle_create_token(backend, Self::st(st)?, params, server_url).await?,
                 )
@@ -118,9 +124,9 @@ impl PhiCloudServer {
                     part_num,
                 ],
             ) => {
-                let pn: u32 = part_num
-                    .parse()
-                    .map_err(|_| PCSError::bad_request("invalid part number"))?;
+                let pn: u32 = part_num.parse().map_err(|_| {
+                    PCSError::bad_request(ErrorCode::INVALID_PART_NUMBER, "invalid part number")
+                })?;
 
                 ok(&file::handle_upload_part(backend, token_key, upload_id, pn, body).await?)
             }
@@ -136,7 +142,8 @@ impl PhiCloudServer {
                     upload_id,
                 ],
             ) => {
-                let params = serde_json::from_slice(&body).map_bad_err()?;
+                let params =
+                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 ok(&file::handle_complete_upload(backend, token_key, upload_id, params).await?)
             }
 
@@ -148,13 +155,15 @@ impl PhiCloudServer {
             }
 
             ("POST", ["1.1", "classes", "_GameSave"]) => {
-                let params = serde_json::from_slice(&body).map_bad_err()?;
+                let params =
+                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
 
                 created(&game::handle_create(backend, Self::st(st)?, params).await?)
             }
 
             ("PUT", ["1.1", "classes", "_GameSave", obj_id]) => {
-                let params = serde_json::from_slice(&body).map_bad_err()?;
+                let params =
+                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
 
                 ok(&game::handle_update(backend, obj_id, Self::st(st)?, params).await?)
             }
@@ -168,7 +177,7 @@ impl PhiCloudServer {
                 let svg = handle_b30_extension_get(backend, session_token).await?;
                 Ok(Response {
                     status_code: 200,
-                    content_type: Some("image/svg+xml; charset=utf-8".into()),
+                    content_type: Some(SVG_CONTENT_TYPE.into()),
                     body: Some(Body::Bytes(svg.into_bytes())),
                 })
             }
@@ -186,11 +195,22 @@ impl PhiCloudServer {
                 no_content()
             }
 
-            _ => Err(PCSError::not_found("route not found")),
+            #[cfg(debug_assertions)]
+            ("GET", ["debug", "error"]) => Err(PCSError::internal_error(
+                ErrorCode::B30_GET_GAME_PROGRESS,
+                "debug route, not for production",
+            )),
+
+            _ => Err(PCSError::not_found(
+                ErrorCode::ROUTE_NOT_FOUND,
+                "route not found",
+            )),
         }
     }
 
     fn st(session_token: Option<&str>) -> Result<&str, PCSError> {
-        session_token.ok_or_else(|| PCSError::unauthorized("missing session token"))
+        session_token.ok_or_else(|| {
+            PCSError::unauthorized(ErrorCode::MISSING_SESSION_TOKEN, "missing session token")
+        })
     }
 }

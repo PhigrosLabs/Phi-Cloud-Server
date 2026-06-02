@@ -1,4 +1,5 @@
 use pcs_core::types::{
+    ErrorCode,
     backend::{PCSBackend, UserCheckResult},
     error::PCSError,
     event::Event,
@@ -10,6 +11,8 @@ use worker::*;
 
 use crate::kv::WorkerKVStorage;
 use crate::utils::{UnsafeSend, UnsafeStream};
+
+const ERROR_CODE: ErrorCode = ErrorCode::other(114);
 
 pub struct WorkerBackend {
     pub db_kv: WorkerKVStorage,
@@ -37,18 +40,18 @@ impl PCSBackend for WorkerBackend {
                 .db_kv
                 .get::<Vec<String>>(key)
                 .await
-                .map_err(|e| PCSError::internal_error(e.to_string()))?
+                .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
                 .unwrap_or_default();
 
             if !openids.contains(&auth.openid) {
                 if openids.len() >= self.user_count_limit as usize {
-                    return Err(PCSError::forbidden("user count limit reached"));
+                    return Err(PCSError::forbidden(ERROR_CODE, "user count limit reached"));
                 }
                 openids.push(auth.openid.clone());
                 self.db_kv
                     .put(key, &openids)
                     .await
-                    .map_err(|e| PCSError::internal_error(e.to_string()))?;
+                    .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
             }
         }
 
@@ -56,13 +59,14 @@ impl PCSBackend for WorkerBackend {
             return Ok(UserCheckResult::default());
         };
 
-        let body = serde_json::to_vec(auth).map_err(|e| PCSError::internal_error(e.to_string()))?;
+        let body = serde_json::to_vec(auth)
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
         let webhook_url = format!("{}/pcs/user_check", url);
 
         let headers = Headers::new();
         headers
             .set("Content-Type", "application/json")
-            .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
 
         let mut init = RequestInit::new();
         init.with_method(Method::Post)
@@ -70,11 +74,11 @@ impl PCSBackend for WorkerBackend {
             .with_body(Some(body.into()));
 
         let req = Request::new_with_init(&webhook_url, &init)
-            .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
 
         let resp = UnsafeSend(async move { Fetch::Request(req).send().await })
             .await
-            .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
 
         let status = resp.status_code();
         let data = match resp.body() {
@@ -83,13 +87,14 @@ impl PCSBackend for WorkerBackend {
         };
 
         if status != 200 {
-            return Err(PCSError::internal_error(format!(
-                "webhook user_check returned status {}",
-                status
-            )));
+            return Err(PCSError::internal_error(
+                ERROR_CODE,
+                format!("webhook user_check returned status {}", status),
+            ));
         }
 
-        serde_json::from_slice(&data).map_err(|e| PCSError::internal_error(e.to_string()))
+        serde_json::from_slice(&data)
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))
     }
 
     async fn emit_event(&self, event: Event) {
@@ -205,8 +210,8 @@ impl FileBucket for WorkerBackend {
         let bucket = &self.r2;
         let obj = UnsafeSend(async move { bucket.head(key).await })
             .await
-            .map_err(|e| PCSError::internal_error(e.to_string()))?
-            .ok_or_else(|| PCSError::not_found("object not found"))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
+            .ok_or_else(|| PCSError::not_found(ERROR_CODE, "object not found"))?;
         Ok(ObjectMetadata::new(obj.key(), obj.http_etag(), obj.size()))
     }
 
@@ -214,15 +219,15 @@ impl FileBucket for WorkerBackend {
         let bucket = &self.r2;
         let obj = UnsafeSend(async move { bucket.get(key).execute().await })
             .await
-            .map_err(|e| PCSError::internal_error(e.to_string()))?
-            .ok_or_else(|| PCSError::not_found("object not found"))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
+            .ok_or_else(|| PCSError::not_found(ERROR_CODE, "object not found"))?;
 
         let body = obj
             .body()
-            .ok_or_else(|| PCSError::not_found("object has no body"))?;
+            .ok_or_else(|| PCSError::not_found(ERROR_CODE, "object has no body"))?;
         let byte_stream = body
             .stream()
-            .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
 
         Ok(UnsafeStream(byte_stream))
     }
@@ -231,7 +236,7 @@ impl FileBucket for WorkerBackend {
         let bucket = &self.r2;
         UnsafeSend(async move { bucket.delete(key).await })
             .await
-            .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
         Ok(())
     }
 
@@ -239,7 +244,7 @@ impl FileBucket for WorkerBackend {
         let bucket = &self.r2;
         let upload = UnsafeSend(async move { bucket.create_multipart_upload(key).execute().await })
             .await
-            .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
         Ok(UnsafeSend(async move { upload.upload_id().await }).await)
     }
 
@@ -251,7 +256,7 @@ impl FileBucket for WorkerBackend {
         let upload = self
             .r2
             .resume_multipart_upload(key, upload_id)
-            .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
         Ok(R2MultipartUpload {
             upload: Some(upload),
         })
@@ -261,8 +266,10 @@ impl FileBucket for WorkerBackend {
         let bucket = &self.r2;
         let obj = UnsafeSend(async move { bucket.put(key, data).execute().await })
             .await
-            .map_err(|e| PCSError::internal_error(e.to_string()))?
-            .ok_or_else(|| PCSError::internal_error("put returned no object".to_string()))?;
+            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
+            .ok_or_else(|| {
+                PCSError::internal_error(ERROR_CODE, "put returned no object".to_string())
+            })?;
         Ok(ObjectMetadata::new(obj.key(), obj.http_etag(), obj.size()))
     }
 }

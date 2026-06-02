@@ -10,13 +10,17 @@ pub(crate) use http::*;
 pub mod error;
 pub(crate) use error::*;
 
-use crate::types::{ByteStream, error::PCSError};
+use crate::types::{
+    ByteStream,
+    error::{ErrorCode, PCSError},
+};
 
 pub fn decode_base64_key(encoded: &str) -> Result<String, PCSError> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(encoded.as_bytes())
-        .map_err(|e| PCSError::bad_request(e.to_string()))?;
-    String::from_utf8(bytes).map_err(|e| PCSError::bad_request(e.to_string()))
+        .map_err(|e| PCSError::bad_request(ErrorCode::BASE64_DECODE, e.to_string()))?;
+    String::from_utf8(bytes)
+        .map_err(|e| PCSError::bad_request(ErrorCode::UTF8_CONVERT, e.to_string()))
 }
 
 pub trait ToRfc3339Z {

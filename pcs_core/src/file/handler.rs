@@ -4,7 +4,7 @@ use crate::{
     file::{model::*, types::*, utils::*},
     types::{
         backend::PCSBackend,
-        error::PCSError,
+        error::{ErrorCode, PCSError},
         file_bucket::{FileBucket, MultipartUpload, UploadedPart},
         kv::{KVStorage, KVTable},
     },
@@ -30,11 +30,19 @@ pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Resul
     let ft = get_file_token(backend, object_id).await?;
 
     let fb = backend.fb();
-    fb.delete(&ft.key).await.map_internal_err()?;
+    fb.delete(&ft.key)
+        .await
+        .map_pcs_error(ErrorCode::FB_DELETE)?;
 
     let kv = backend.kv();
-    let file_tokens = kv.open_table("file_tokens").await.map_db_err()?;
-    file_tokens.delete(&ft.key).await.map_db_err()?;
+    let file_tokens = kv
+        .open_table("file_tokens")
+        .await
+        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
+    file_tokens
+        .delete(&ft.key)
+        .await
+        .map_pcs_error(ErrorCode::KV_DELETE)?;
 
     Ok(())
 }
@@ -45,7 +53,7 @@ pub async fn handle_download<B: PCSBackend>(
 ) -> Result<<B::FB as FileBucket>::Stream, PCSError> {
     let ft = get_file_token(backend, object_id).await?;
     let fb = backend.fb();
-    fb.get(&ft.key).await.map_internal_err()
+    fb.get(&ft.key).await.map_pcs_error(ErrorCode::FB_GET)
 }
 
 pub async fn handle_callback<B: PCSBackend>(
@@ -65,7 +73,7 @@ pub async fn handle_start_upload<B: PCSBackend>(
     let upload_id = fb
         .create_multipart_upload(&ft.key)
         .await
-        .map_internal_err()?;
+        .map_pcs_error(ErrorCode::FB_CREATE_MULTIPART_UPLOAD)?;
 
     Ok(StartUploadResponse { upload_id })
 }
@@ -84,11 +92,11 @@ pub async fn handle_upload_part<B: PCSBackend>(
     let mut upload = fb
         .get_multipart_upload(&ft.key, upload_id)
         .await
-        .map_internal_err()?;
+        .map_pcs_error(ErrorCode::FB_GET_MULTIPART_UPLOAD)?;
     let part = upload
         .upload_part(part_number, data)
         .await
-        .map_internal_err()?;
+        .map_pcs_error(ErrorCode::FB_UPLOAD_PART)?;
 
     Ok(UploadPartResponse { etag: part.etag })
 }
@@ -106,7 +114,7 @@ pub async fn handle_complete_upload<B: PCSBackend>(
     let mut upload = fb
         .get_multipart_upload(&ft.key, upload_id)
         .await
-        .map_internal_err()?;
+        .map_pcs_error(ErrorCode::FB_GET_MULTIPART_UPLOAD)?;
 
     let upload_parts: Vec<UploadedPart> = params
         .parts
@@ -114,7 +122,10 @@ pub async fn handle_complete_upload<B: PCSBackend>(
         .map(|p| UploadedPart::new(p.part_number, p.etag))
         .collect();
 
-    upload.complete(upload_parts).await.map_internal_err()?;
+    upload
+        .complete(upload_parts)
+        .await
+        .map_pcs_error(ErrorCode::FB_MULTIPART_COMPLETE)?;
 
     Ok(CompleteUploadResponse {
         upload_id: upload_id.into(),

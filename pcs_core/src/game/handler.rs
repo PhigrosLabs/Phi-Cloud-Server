@@ -5,7 +5,7 @@ use crate::{
     game::{model::GameSave, types::*},
     types::{
         backend::PCSBackend,
-        error::PCSError,
+        error::{ErrorCode, PCSError},
         event::Event,
         kv::{KVStorage, KVTable},
     },
@@ -31,20 +31,29 @@ pub async fn handle_create<B: PCSBackend>(
     );
 
     let kv = backend.kv();
-    let game_saves = kv.open_table("game_saves").await.map_db_err()?;
-    game_saves.put(&gs.object_id, &gs).await.map_db_err()?;
+    let game_saves = kv
+        .open_table("game_saves")
+        .await
+        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
+    game_saves
+        .put(&gs.object_id, &gs)
+        .await
+        .map_pcs_error(ErrorCode::KV_PUT)?;
 
-    let games_by_user = kv.open_table("game_saves_by_user").await.map_db_err()?;
+    let games_by_user = kv
+        .open_table("game_saves_by_user")
+        .await
+        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
     let mut list: Vec<String> = games_by_user
         .get(&session.object_id)
         .await
-        .map_db_err()?
+        .map_pcs_error(ErrorCode::KV_GET)?
         .unwrap_or_default();
     list.push(gs.object_id.clone());
     games_by_user
         .put(&session.object_id, &list)
         .await
-        .map_internal_err()?;
+        .map_pcs_error(ErrorCode::KV_PUT)?;
 
     let event_user = (&session).into();
     backend
@@ -69,17 +78,27 @@ pub async fn handle_list<B: PCSBackend>(
     let session = user::get_session_by_token(backend, session_token).await?;
 
     let kv = backend.kv();
-    let games_by_user = kv.open_table("game_saves_by_user").await.map_db_err()?;
-    let game_saves = kv.open_table("game_saves").await.map_db_err()?;
+    let games_by_user = kv
+        .open_table("game_saves_by_user")
+        .await
+        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
+    let game_saves = kv
+        .open_table("game_saves")
+        .await
+        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
 
     let gs_ids: Vec<String> = games_by_user
         .get(&session.object_id)
         .await
-        .map_db_err()?
+        .map_pcs_error(ErrorCode::KV_GET)?
         .unwrap_or_default();
     let mut items = Vec::new();
     for gs_objid in &gs_ids {
-        if let Some(gs) = game_saves.get::<GameSave>(gs_objid).await.map_db_err()? {
+        if let Some(gs) = game_saves
+            .get::<GameSave>(gs_objid)
+            .await
+            .map_pcs_error(ErrorCode::KV_GET)?
+        {
             let ft = file::get_file_token(backend, &gs.game_file_object_id).await?;
             items.push(GameSaveItem {
                 summary: gs.summary,
@@ -106,11 +125,14 @@ pub async fn handle_update<B: PCSBackend>(
     let session = user::get_session_by_token(backend, session_token).await?;
 
     let kv = backend.kv();
-    let game_saves = kv.open_table("game_saves").await.map_db_err()?;
+    let game_saves = kv
+        .open_table("game_saves")
+        .await
+        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
     let mut gs: GameSave = game_saves
         .get(object_id)
         .await
-        .map_db_err()?
+        .map_pcs_error(ErrorCode::KV_GET)?
         .ok_or_else(PCSError::db_not_found)?;
 
     gs.summary = params.summary;
@@ -118,7 +140,10 @@ pub async fn handle_update<B: PCSBackend>(
     gs.game_file_object_id = params.game_file.object_id;
     gs.updated_at = backend.utc_now();
 
-    game_saves.put(&gs.object_id, &gs).await.map_db_err()?;
+    game_saves
+        .put(&gs.object_id, &gs)
+        .await
+        .map_pcs_error(ErrorCode::KV_PUT)?;
 
     let event_user = (&session).into();
     backend

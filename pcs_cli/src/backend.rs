@@ -1,7 +1,7 @@
 use pcs_core::{
     types::{
         backend::{PCSBackend, PhiInfoResponse, UserCheckResult},
-        error::PCSError,
+        error::{ErrorCode, PCSError},
         event::Event,
     },
     user::AuthData,
@@ -45,18 +45,18 @@ impl PCSBackend for CliBackend {
             .json(auth)
             .send()
             .await
-            .map_err(|e| PCSError::internal_error(e.to_string()))?;
+            .map_err(|e| PCSError::internal_error(ErrorCode::other(90048), e.to_string()))?;
 
         if resp.status() != 200 {
-            return Err(PCSError::internal_error(format!(
-                "webhook user_check returned status {}",
-                resp.status()
-            )));
+            return Err(PCSError::internal_error(
+                ErrorCode::other(90051),
+                format!("webhook user_check returned status {}", resp.status()),
+            ));
         }
 
         resp.json()
             .await
-            .map_err(|e| PCSError::internal_error(e.to_string()))
+            .map_err(|e| PCSError::internal_error(ErrorCode::other(90059), e.to_string()))
     }
 
     async fn emit_event(&self, event: Event) {
@@ -83,13 +83,19 @@ impl PCSBackend for CliBackend {
 
     async fn call_phi_info_router(&self, path: &str) -> Result<PhiInfoResponse, Self::Error> {
         if self.phi_info_url.is_empty() {
-            return Err(PCSError::internal_error("phi_info_url is not configured"));
+            return Err(PCSError::internal_error(
+                ErrorCode::other(90086),
+                "phi_info_url is not configured",
+            ));
         }
 
         if let Some(base) = self.phi_info_url.strip_prefix("file://") {
             let file_path = std::path::PathBuf::from(base).join(path.trim_start_matches('/'));
             let data = std::fs::read(&file_path).map_err(|e| {
-                PCSError::internal_error(format!("failed to read {}: {}", file_path.display(), e))
+                PCSError::internal_error(
+                    ErrorCode::other(90092),
+                    format!("failed to read {}: {}", file_path.display(), e),
+                )
             })?;
             let mime = guess_mime_from_path(path);
             Ok(PhiInfoResponse {
@@ -101,10 +107,12 @@ impl PCSBackend for CliBackend {
             || self.phi_info_url.starts_with("https://")
         {
             let url = join_http_url(&self.phi_info_url, path);
-            let resp =
-                self.http_client.get(&url).send().await.map_err(|e| {
-                    PCSError::internal_error(format!("phi_info request failed: {}", e))
-                })?;
+            let resp = self.http_client.get(&url).send().await.map_err(|e| {
+                PCSError::internal_error(
+                    ErrorCode::other(90106),
+                    format!("phi_info request failed: {}", e),
+                )
+            })?;
 
             let code = resp.status().as_u16();
             let mime = resp
@@ -117,16 +125,19 @@ impl PCSBackend for CliBackend {
                 .bytes()
                 .await
                 .map_err(|e| {
-                    PCSError::internal_error(format!("phi_info read response failed: {}", e))
+                    PCSError::internal_error(
+                        ErrorCode::other(90120),
+                        format!("phi_info read response failed: {}", e),
+                    )
                 })?
                 .to_vec();
 
             Ok(PhiInfoResponse { code, mime, data })
         } else {
-            Err(PCSError::internal_error(format!(
-                "unsupported phi_info_url scheme: {}",
-                self.phi_info_url
-            )))
+            Err(PCSError::internal_error(
+                ErrorCode::other(90126),
+                format!("unsupported phi_info_url scheme: {}", self.phi_info_url),
+            ))
         }
     }
 }

@@ -29,5 +29,6 @@ where
     type Error = E;
 }
 
+pub const SVG_CONTENT_TYPE: &str = "image/svg+xml; charset=utf-8";
 pub const JSON_CONTENT_TYPE: &str = "application/json; charset=utf-8";
 pub const OCTET_STREAM_CONTENT_TYPE: &str = "application/octet-stream";
