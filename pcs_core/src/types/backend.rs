@@ -34,8 +34,6 @@ pub struct PhiInfoResponse {
 pub trait PCSBackend: Send + Sync + 'static {
     type FB: FileBucket;
     type KV: KVStorage;
-    #[cfg(feature = "extension_query_base")]
-    type Error: core::error::Error;
 
     fn fb(&self) -> &Self::FB;
     fn kv(&self) -> &Self::KV;
@@ -45,5 +43,5 @@ pub trait PCSBackend: Send + Sync + 'static {
     fn utc_now(&self) -> DateTime<Utc>;
 
     #[cfg(feature = "extension_query_base")]
-    async fn call_phi_info_router(&self, path: &str) -> Result<PhiInfoResponse, Self::Error>;
+    async fn call_phi_info_router(&self, path: &str) -> Result<PhiInfoResponse, PCSError>;
 }

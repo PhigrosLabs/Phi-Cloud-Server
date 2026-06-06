@@ -27,7 +27,6 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
     let db_kv = WorkerKVStorage {
         kv: env.kv(&db_kv_namespace)?,
-        table_prefix: String::new(),
     };
 
     let bucket_name = env
@@ -49,7 +48,7 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         user_count_limit,
     };
 
-    let body = req.bytes().await?;
+    let body = &req.bytes().await?;
     let method = req.method().to_string();
     let path = req.path().to_string();
     let st = req.headers().get("X-LC-Session").ok().and_then(|h| h);

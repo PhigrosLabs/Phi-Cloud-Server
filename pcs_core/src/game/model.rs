@@ -1,8 +1,17 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::types::backend::PCSBackend;
+use crate::types::kv::KVTable;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameSaveIdsByUser(pub Vec<String>);
+
+impl KVTable for GameSaveIdsByUser {
+    const TABLE_NAME: &'static str = "game_saves_by_user";
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSave {
@@ -12,6 +21,10 @@ pub struct GameSave {
     pub modified_at: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl KVTable for GameSave {
+    const TABLE_NAME: &'static str = "game_saves";
 }
 
 impl GameSave {

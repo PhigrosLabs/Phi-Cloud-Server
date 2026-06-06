@@ -22,7 +22,6 @@ pub struct CliBackend {
 impl PCSBackend for CliBackend {
     type FB = LocalFileBucket;
     type KV = RedbKVStorage;
-    type Error = PCSError;
 
     fn fb(&self) -> &Self::FB {
         &self.fb
@@ -81,7 +80,7 @@ impl PCSBackend for CliBackend {
         chrono::Utc::now()
     }
 
-    async fn call_phi_info_router(&self, path: &str) -> Result<PhiInfoResponse, Self::Error> {
+    async fn call_phi_info_router(&self, path: &str) -> Result<PhiInfoResponse, PCSError> {
         if self.phi_info_url.is_empty() {
             return Err(PCSError::internal_error(
                 ErrorCode::other(90086),

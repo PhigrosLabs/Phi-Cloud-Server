@@ -1,5 +1,5 @@
 use crate::{
-    types::{ACL, OCTET_STREAM_CONTENT_TYPE, backend::PCSBackend},
+    types::{ACL, KVTable, OCTET_STREAM_CONTENT_TYPE, backend::PCSBackend},
     utils::ToRfc3339Z,
 };
 use alloc::{
@@ -38,6 +38,10 @@ pub struct FileToken {
     pub acl: ACL,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl KVTable for FileToken {
+    const TABLE_NAME: &'static str = "file_tokens";
 }
 
 impl FileToken {

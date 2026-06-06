@@ -1,20 +1,19 @@
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{string::ToString, vec::Vec};
 
 use crate::{
     file,
-    game::model::GameSave,
+    game::model::{GameSave, GameSaveIdsByUser},
     types::{
         backend::PCSBackend,
         error::{ErrorCode, PCSError},
         event::{Event, EventUser},
-        kv::{KVStorage, KVTable},
+        kv::KVStorage,
     },
     user::{
         AuthData, SessionResponse, UpdateUserParams, UserResponse, delete_session_tables,
-        get_session_by_object_id, get_session_by_token, model::Session, save_session,
+        get_session_by_object_id, get_session_by_token,
+        model::{Session, SessionTokenByObjId, SessionTokenByOpenId},
+        save_session,
     },
     utils::ToRfc3339Z,
 };
@@ -30,13 +29,9 @@ pub async fn handle_register<B: PCSBackend>(
     let short_id = check_result.short_id.unwrap_or_else(|| "PCS".to_string());
 
     let kv = backend.kv();
-    let sessions_by_openid = kv
-        .open_table("sessions_by_openid")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
 
-    if let Some(token) = sessions_by_openid
-        .get::<String>(&auth.openid)
+    if let Some(SessionTokenByOpenId(token)) = kv
+        .get::<SessionTokenByOpenId>(&auth.openid)
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
     {
@@ -51,27 +46,21 @@ pub async fn handle_register<B: PCSBackend>(
 
     let session = Session::new(name, auth.openid, short_id, backend);
 
-    let sessions = kv
-        .open_table("sessions")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    let sessions_by_objid = kv
-        .open_table("sessions_by_objid")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-
-    sessions
-        .put(&session.session_token, &session)
+    kv.put::<Session>(&session.session_token, &session)
         .await
         .map_pcs_error(ErrorCode::KV_PUT)?;
-    sessions_by_openid
-        .put(&session.openid, &session.session_token)
-        .await
-        .map_pcs_error(ErrorCode::KV_PUT)?;
-    sessions_by_objid
-        .put(&session.object_id, &session.session_token)
-        .await
-        .map_pcs_error(ErrorCode::KV_PUT)?;
+    kv.put::<SessionTokenByOpenId>(
+        &session.openid,
+        &SessionTokenByOpenId(session.session_token.clone()),
+    )
+    .await
+    .map_pcs_error(ErrorCode::KV_PUT)?;
+    kv.put::<SessionTokenByObjId>(
+        &session.object_id,
+        &SessionTokenByObjId(session.session_token.clone()),
+    )
+    .await
+    .map_pcs_error(ErrorCode::KV_PUT)?;
     backend
         .emit_event(Event::UserCreate {
             user: EventUser::from(&session),
@@ -125,34 +114,24 @@ pub async fn handle_delete<B: PCSBackend>(
         ));
     }
     let kv = backend.kv();
-    let games_by_user = kv
-        .open_table("game_saves_by_user")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    let game_saves = kv
-        .open_table("game_saves")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    let gs_ids: Vec<String> = games_by_user
-        .get(&session.object_id)
+    let GameSaveIdsByUser(gs_ids) = kv
+        .get::<GameSaveIdsByUser>(&session.object_id)
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
-        .unwrap_or_default();
+        .unwrap_or(GameSaveIdsByUser(Vec::new()));
     for gs_objid in &gs_ids {
-        if let Some(gs) = game_saves
+        if let Some(gs) = kv
             .get::<GameSave>(gs_objid)
             .await
             .map_pcs_error(ErrorCode::KV_GET)?
         {
             file::handle_delete(backend, &gs.game_file_object_id).await?;
         }
-        game_saves
-            .delete(gs_objid)
+        kv.delete::<GameSave>(gs_objid)
             .await
             .map_pcs_error(ErrorCode::KV_DELETE)?;
     }
-    games_by_user
-        .delete(&session.object_id)
+    kv.delete::<GameSaveIdsByUser>(&session.object_id)
         .await
         .map_pcs_error(ErrorCode::KV_DELETE)?;
 
@@ -181,37 +160,27 @@ pub async fn handle_refresh_token<B: PCSBackend>(
     let old_event_user = EventUser::from(&session);
 
     let kv = backend.kv();
-    let sessions = kv
-        .open_table("sessions")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    sessions
-        .delete(&session.session_token)
+    kv.delete::<Session>(&session.session_token)
         .await
         .map_pcs_error(ErrorCode::KV_DELETE)?;
 
     session.session_token = backend.random_id();
     session.updated_at = backend.utc_now();
-    sessions
-        .put(&session.session_token, &session)
+    kv.put::<Session>(&session.session_token, &session)
         .await
         .map_pcs_error(ErrorCode::KV_PUT)?;
-    let sessions_by_objid = kv
-        .open_table("sessions_by_objid")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    sessions_by_objid
-        .put(&session.object_id, &session.session_token)
-        .await
-        .map_pcs_error(ErrorCode::KV_PUT)?;
-    let sessions_by_openid = kv
-        .open_table("sessions_by_openid")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    sessions_by_openid
-        .put(&session.openid, &session.session_token)
-        .await
-        .map_pcs_error(ErrorCode::KV_PUT)?;
+    kv.put::<SessionTokenByObjId>(
+        &session.object_id,
+        &SessionTokenByObjId(session.session_token.clone()),
+    )
+    .await
+    .map_pcs_error(ErrorCode::KV_PUT)?;
+    kv.put::<SessionTokenByOpenId>(
+        &session.openid,
+        &SessionTokenByOpenId(session.session_token.clone()),
+    )
+    .await
+    .map_pcs_error(ErrorCode::KV_PUT)?;
 
     backend
         .emit_event(Event::UserRefreshSessionToken {

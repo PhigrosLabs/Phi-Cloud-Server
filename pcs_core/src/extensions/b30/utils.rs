@@ -89,10 +89,7 @@ pub struct PhiInfoFetcher<'a, T: PCSBackend> {
 
 impl<'a, T: PCSBackend> PhiInfoFetcher<'a, T> {
     pub async fn new(provider: &'a T) -> Result<PhiInfoFetcher<'a, T>, PCSError> {
-        let response = provider
-            .call_phi_info_router("/api_info.json")
-            .await
-            .map_pcs_error(ErrorCode::FB_GET)?;
+        let response = provider.call_phi_info_router("/api_info.json").await?;
         let api_info: ApiInfo =
             serde_json::from_slice(&response.data).map_pcs_error(ErrorCode::JSON_DESERIALIZE)?;
 
@@ -113,11 +110,7 @@ impl<'a, T: PCSBackend> PhiInfoFetcher<'a, T> {
     }
 
     async fn fetch_json<R: DeserializeOwned>(&self, path: &str) -> Result<R, PCSError> {
-        let response = self
-            .provider
-            .call_phi_info_router(path)
-            .await
-            .map_pcs_error(ErrorCode::FB_GET)?;
+        let response = self.provider.call_phi_info_router(path).await?;
         let data: R =
             serde_json::from_slice(&response.data).map_pcs_error(ErrorCode::JSON_DESERIALIZE)?;
         Ok(data)
@@ -157,31 +150,19 @@ impl<'a, T: PCSBackend> PhiInfoFetcher<'a, T> {
 
     pub async fn get_image_asset(&self, key: &str) -> Result<(String, Vec<u8>), PCSError> {
         let path = format!("/asset/{}.{}", key, self.suffix.image);
-        let response = self
-            .provider
-            .call_phi_info_router(&path)
-            .await
-            .map_pcs_error(ErrorCode::FB_GET)?;
+        let response = self.provider.call_phi_info_router(&path).await?;
         Ok((response.mime, response.data))
     }
 
     pub async fn get_music_asset(&self, key: &str) -> Result<(String, Vec<u8>), PCSError> {
         let path = format!("/asset/{}.{}", key, self.suffix.music);
-        let response = self
-            .provider
-            .call_phi_info_router(&path)
-            .await
-            .map_pcs_error(ErrorCode::FB_GET)?;
+        let response = self.provider.call_phi_info_router(&path).await?;
         Ok((response.mime, response.data))
     }
 
     pub async fn get_text_asset(&self, key: &str) -> Result<(String, Vec<u8>), PCSError> {
         let path = format!("/asset/{}.{}", key, self.suffix.text);
-        let response = self
-            .provider
-            .call_phi_info_router(&path)
-            .await
-            .map_pcs_error(ErrorCode::FB_GET)?;
+        let response = self.provider.call_phi_info_router(&path).await?;
         Ok((response.mime, response.data))
     }
 }

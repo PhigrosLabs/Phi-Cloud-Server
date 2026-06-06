@@ -92,15 +92,15 @@ impl MultipartUpload for FileMultipartUpload {
     async fn upload_part(
         &mut self,
         part_number: u32,
-        data: Vec<u8>,
+        data: &[u8],
     ) -> Result<UploadedPart, Self::Error> {
-        let etag = compute_etag(&data);
+        let etag = compute_etag(data);
         let part_path = self.parts_dir().join(part_number.to_string());
 
         tokio::fs::create_dir_all(self.parts_dir()).await?;
 
         let mut file = tokio::fs::File::create(&part_path).await?;
-        file.write_all(&data).await?;
+        file.write_all(data).await?;
         file.flush().await?;
 
         let part = UploadedPart::new(part_number as i32, &etag);
@@ -183,7 +183,7 @@ impl FileBucket for LocalFileBucket {
             "{:x}-{}",
             meta.len(),
             meta.modified()?
-                .duration_since(std::time::SystemTime::UNIX_EPOCH,)
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos()
         );
@@ -255,14 +255,14 @@ impl FileBucket for LocalFileBucket {
         })
     }
 
-    async fn put(&self, key: &str, data: Vec<u8>) -> Result<ObjectMetadata, Self::Error> {
+    async fn put(&self, key: &str, data: &[u8]) -> Result<ObjectMetadata, Self::Error> {
         let key = sanitize_key(key)?;
         let path = self.object_path(&key);
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        let etag = compute_etag(&data);
-        tokio::fs::write(&path, &data).await?;
+        let etag = compute_etag(data);
+        tokio::fs::write(&path, data).await?;
         Ok(ObjectMetadata::new(key, etag, data.len() as u64))
     }
 }

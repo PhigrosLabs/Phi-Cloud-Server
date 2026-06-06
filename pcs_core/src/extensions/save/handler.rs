@@ -5,12 +5,11 @@ use serde::{Deserialize, Serialize};
 use phi_save_codec::{GameKey, GameProgress, GameRecord, Settings, User};
 
 use super::save_provider::SaveProvider;
-use crate::types::KVTable;
 use crate::utils::{ToRfc3339Z, stream_to_bytes};
 use crate::{
     file,
     file::model::{FileToken, MetaData},
-    game::model::GameSave,
+    game::model::{GameSave, GameSaveIdsByUser},
     types::{
         backend::PCSBackend,
         error::{ErrorCode, PCSError},
@@ -39,20 +38,11 @@ pub async fn handle_save_extension_get<B: PCSBackend>(
     let session = user::get_session_by_token(backend, session_token).await?;
 
     let kv = backend.kv();
-    let games_by_user = kv
-        .open_table("game_saves_by_user")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    let game_saves = kv
-        .open_table("game_saves")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-
-    let gs_ids: Vec<String> = games_by_user
-        .get(&session.object_id)
+    let GameSaveIdsByUser(gs_ids) = kv
+        .get::<GameSaveIdsByUser>(&session.object_id)
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
-        .unwrap_or_default();
+        .unwrap_or(GameSaveIdsByUser(Vec::new()));
 
     if gs_ids.is_empty() {
         return Err(PCSError::not_found(
@@ -62,8 +52,8 @@ pub async fn handle_save_extension_get<B: PCSBackend>(
     }
 
     let last_gs_id = &gs_ids[0];
-    let gs: GameSave = game_saves
-        .get(last_gs_id)
+    let gs: GameSave = kv
+        .get::<GameSave>(last_gs_id)
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
         .ok_or_else(PCSError::db_not_found)?;
@@ -126,20 +116,11 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
     let session = user::get_session_by_token(backend, session_token).await?;
 
     let kv = backend.kv();
-    let games_by_user = kv
-        .open_table("game_saves_by_user")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    let game_saves = kv
-        .open_table("game_saves")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-
-    let gs_ids: Vec<String> = games_by_user
+    let GameSaveIdsByUser(gs_ids) = kv
         .get(&session.object_id)
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
-        .unwrap_or_default();
+        .unwrap_or(GameSaveIdsByUser(Vec::new()));
 
     if gs_ids.is_empty() {
         return Err(PCSError::not_found(
@@ -149,8 +130,8 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
     }
 
     let first_gs_id = &gs_ids[0];
-    let mut gs: GameSave = game_saves
-        .get(first_gs_id)
+    let mut gs: GameSave = kv
+        .get::<GameSave>(first_gs_id)
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
         .ok_or_else(PCSError::db_not_found)?;
@@ -239,7 +220,7 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
     let new_ft = FileToken::new(meta_data, ft.name.clone(), ft.acl.clone(), backend);
     file::save_file_token(backend, &new_ft).await?;
 
-    fb.put(&new_ft.key, new_data)
+    fb.put(&new_ft.key, &new_data)
         .await
         .map_pcs_error(ErrorCode::FB_PUT)?;
 
@@ -247,17 +228,12 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
     gs.modified_at = utc_now.to_rfc3339_z();
     gs.game_file_object_id = new_ft.key;
     gs.updated_at = utc_now;
-    game_saves
-        .put(&gs.object_id, &gs)
+    kv.put::<GameSave>(&gs.object_id, &gs)
         .await
         .map_pcs_error(ErrorCode::KV_PUT)?;
 
     let _ = fb.delete(&old_file_key).await;
-    let file_tokens = kv
-        .open_table("file_tokens")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    let _ = file_tokens.delete(&old_file_key).await;
+    let _ = kv.delete::<FileToken>(&old_file_key).await;
 
     Ok(())
 }

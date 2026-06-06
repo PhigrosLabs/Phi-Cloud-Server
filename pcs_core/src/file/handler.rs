@@ -6,7 +6,7 @@ use crate::{
         backend::PCSBackend,
         error::{ErrorCode, PCSError},
         file_bucket::{FileBucket, MultipartUpload, UploadedPart},
-        kv::{KVStorage, KVTable},
+        kv::KVStorage,
     },
     user,
 };
@@ -35,12 +35,7 @@ pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Resul
         .map_pcs_error(ErrorCode::FB_DELETE)?;
 
     let kv = backend.kv();
-    let file_tokens = kv
-        .open_table("file_tokens")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    file_tokens
-        .delete(&ft.key)
+    kv.delete::<FileToken>(&ft.key)
         .await
         .map_pcs_error(ErrorCode::KV_DELETE)?;
 
@@ -83,7 +78,7 @@ pub async fn handle_upload_part<B: PCSBackend>(
     token_key: &str,
     upload_id: &str,
     part_number: u32,
-    data: Vec<u8>,
+    data: &[u8],
 ) -> Result<UploadPartResponse, PCSError> {
     let key = decode_base64_key(token_key)?;
     let ft = get_file_token(backend, &key).await?;

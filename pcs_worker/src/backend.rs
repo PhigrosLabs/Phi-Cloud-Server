@@ -4,13 +4,21 @@ use pcs_core::types::{
     error::PCSError,
     event::Event,
     file_bucket::{FileBucket, ObjectMetadata, UploadedPart},
-    kv::KVTable,
+    kv::{KVStorage, KVTable},
 };
 use pcs_core::user::AuthData;
+use serde::{Deserialize, Serialize};
 use worker::*;
 
 use crate::kv::WorkerKVStorage;
 use crate::utils::{UnsafeSend, UnsafeStream};
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct OpenIds(pub Vec<String>);
+
+impl KVTable for OpenIds {
+    const TABLE_NAME: &'static str = "_meta";
+}
 
 const ERROR_CODE: ErrorCode = ErrorCode::other(114);
 
@@ -36,18 +44,18 @@ impl PCSBackend for WorkerBackend {
     async fn user_check(&self, auth: &AuthData) -> Result<UserCheckResult, PCSError> {
         if self.user_count_limit > 0 {
             let key = "user_count:openids";
-            let mut openids: Vec<String> = self
+            let mut openids: OpenIds = self
                 .db_kv
-                .get::<Vec<String>>(key)
+                .get::<OpenIds>(key)
                 .await
                 .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
                 .unwrap_or_default();
 
-            if !openids.contains(&auth.openid) {
-                if openids.len() >= self.user_count_limit as usize {
+            if !openids.0.contains(&auth.openid) {
+                if openids.0.len() >= self.user_count_limit as usize {
                     return Err(PCSError::forbidden(ERROR_CODE, "user count limit reached"));
                 }
-                openids.push(auth.openid.clone());
+                openids.0.push(auth.openid.clone());
                 self.db_kv
                     .put(key, &openids)
                     .await
@@ -166,14 +174,14 @@ impl pcs_core::types::file_bucket::MultipartUpload for R2MultipartUpload {
     async fn upload_part(
         &mut self,
         part_number: u32,
-        data: Vec<u8>,
+        data: &[u8],
     ) -> Result<UploadedPart, Self::Error> {
         let upload = self
             .upload
             .as_ref()
             .ok_or_else(|| worker::Error::RustError("upload already completed".into()))?;
         let pn = part_number as u16;
-        let part = UnsafeSend(async move { upload.upload_part(pn, data).await }).await?;
+        let part = UnsafeSend(async move { upload.upload_part(pn, data.to_vec()).await }).await?;
         Ok(UploadedPart::new(part.part_number() as i32, part.etag()))
     }
 
@@ -262,9 +270,9 @@ impl FileBucket for WorkerBackend {
         })
     }
 
-    async fn put(&self, key: &str, data: Vec<u8>) -> Result<ObjectMetadata, Self::Error> {
+    async fn put(&self, key: &str, data: &[u8]) -> Result<ObjectMetadata, Self::Error> {
         let bucket = &self.r2;
-        let obj = UnsafeSend(async move { bucket.put(key, data).execute().await })
+        let obj = UnsafeSend(async move { bucket.put(key, data.to_vec()).execute().await })
             .await
             .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
             .ok_or_else(|| {

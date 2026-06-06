@@ -1,10 +1,8 @@
-use redb::{Database, ReadableDatabase, TableDefinition};
-use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
 use pcs_core::types::kv::{KVStorage, KVTable};
+use redb::{Database, ReadableDatabase, TableDefinition};
 
-#[derive(Clone)]
 pub struct RedbKVStorage {
     db: Arc<Database>,
 }
@@ -16,84 +14,77 @@ impl RedbKVStorage {
     }
 }
 
-#[derive(Clone)]
-pub struct RedbKVTable {
-    db: Arc<Database>,
-    table_name: String,
-}
+type Table = TableDefinition<'static, &'static str, Vec<u8>>;
 
 impl KVStorage for RedbKVStorage {
-    type Table = RedbKVTable;
     type Error = redb::Error;
 
-    async fn open_table(&self, table: &str) -> Result<Self::Table, Self::Error> {
-        Ok(RedbKVTable {
-            db: self.db.clone(),
-            table_name: table.to_string(),
+    async fn get<T: KVTable>(&self, key: &str) -> Result<Option<T>, Self::Error> {
+        let db = self.db.clone();
+        let key = key.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let table: Table = TableDefinition::new(T::TABLE_NAME);
+            let txn = db.begin_read()?;
+            let table = match txn.open_table(table) {
+                Ok(table) => table,
+                Err(redb::TableError::TableDoesNotExist(_)) => {
+                    return Ok(None);
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+            let value = table.get(key.as_str())?;
+            match value {
+                Some(v) => {
+                    let bytes = v.value();
+                    let decoded = serde_json::from_slice::<T>(&bytes).map_err(|e| {
+                        redb::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                    })?;
+                    Ok(Some(decoded))
+                }
+                None => Ok(None),
+            }
         })
-    }
-}
-
-impl KVTable for RedbKVTable {
-    type Error = redb::Error;
-
-    async fn get<T>(&self, key: &str) -> Result<Option<T>, Self::Error>
-    where
-        T: DeserializeOwned + Send + Sync,
-    {
-        let tab_def: TableDefinition<&str, Vec<u8>> = TableDefinition::new(&self.table_name);
-
-        let txn = self.db.begin_read()?;
-        let table = match txn.open_table(tab_def) {
-            Ok(table) => table,
-            Err(redb::TableError::TableDoesNotExist(_)) => {
-                return Ok(None);
-            }
-            Err(e) => return Err(e.into()),
-        };
-
-        let value = table.get(key)?;
-
-        let result = match value {
-            Some(v) => {
-                let bytes = v.value();
-                let decoded = serde_json::from_slice::<T>(&bytes).map_err(|e| {
-                    redb::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-                })?;
-                Some(decoded)
-            }
-            None => None,
-        };
-
-        Ok(result)
+        .await
+        .expect("spawn_blocking panicked")
     }
 
-    async fn put<T>(&self, key: &str, value: &T) -> Result<(), Self::Error>
-    where
-        T: Serialize + Send + Sync,
-    {
-        let value = serde_json::to_vec(value).map_err(|e| {
+    async fn put<T: KVTable>(&self, key: &str, value: &T) -> Result<(), Self::Error> {
+        let db = self.db.clone();
+        let key = key.to_owned();
+        let value_bytes = serde_json::to_vec(value).map_err(|e| {
             redb::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
         })?;
 
-        let tab_def: TableDefinition<&str, Vec<u8>> = TableDefinition::new(&self.table_name);
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(tab_def)?;
-            table.insert(key, value.to_vec())?;
-        }
-        txn.commit()?;
-        Ok(())
+        tokio::task::spawn_blocking(move || {
+            let table: Table = TableDefinition::new(T::TABLE_NAME);
+            let txn = db.begin_write()?;
+            {
+                let mut table = txn.open_table(table)?;
+                table.insert(key.as_str(), value_bytes)?;
+            }
+            txn.commit()?;
+            Ok(())
+        })
+        .await
+        .expect("spawn_blocking panicked")
     }
 
-    async fn delete(&self, key: &str) -> Result<(), Self::Error> {
-        let tab_def: TableDefinition<&str, Vec<u8>> = TableDefinition::new(&self.table_name);
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(tab_def)?;
-            table.remove(key)?;
-        }
-        txn.commit()?;
-        Ok(())
+    async fn delete<T: KVTable>(&self, key: &str) -> Result<(), Self::Error> {
+        let db = self.db.clone();
+        let key = key.to_owned();
+
+        tokio::task::spawn_blocking(move || {
+            let table: Table = TableDefinition::new(T::TABLE_NAME);
+            let txn = db.begin_write()?;
+            {
+                let mut table = txn.open_table(table)?;
+                table.remove(key.as_str())?;
+            }
+            txn.commit()?;
+            Ok(())
+        })
+        .await
+        .expect("spawn_blocking panicked")
     }
 }

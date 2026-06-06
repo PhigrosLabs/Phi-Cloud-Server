@@ -45,7 +45,7 @@ pub trait MultipartUpload: Send + Sync {
     async fn upload_part(
         &mut self,
         part_number: u32,
-        data: Vec<u8>,
+        data: &[u8],
     ) -> Result<UploadedPart, Self::Error>;
 
     async fn complete(&mut self, parts: Vec<UploadedPart>) -> Result<ObjectMetadata, Self::Error>;
@@ -73,5 +73,5 @@ pub trait FileBucket: Sync + Send + 'static {
         upload_id: &str,
     ) -> Result<Self::MultipartUpload, Self::Error>;
 
-    async fn put(&self, key: &str, data: Vec<u8>) -> Result<ObjectMetadata, Self::Error>;
+    async fn put(&self, key: &str, data: &[u8]) -> Result<ObjectMetadata, Self::Error>;
 }

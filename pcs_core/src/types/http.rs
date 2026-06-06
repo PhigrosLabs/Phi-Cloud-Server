@@ -5,7 +5,7 @@ use crate::types::ByteStream;
 pub struct Request<'a> {
     pub method: &'a str,
     pub path: &'a str,
-    pub body: Vec<u8>,
+    pub body: &'a [u8],
     // header: X-LC-Session
     pub session_token: Option<&'a str>,
     // http(s)://{host}:{port}

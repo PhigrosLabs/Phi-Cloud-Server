@@ -53,7 +53,7 @@ async fn handle_req(
         .get("X-LC-Session")
         .and_then(|v| v.to_str().ok());
 
-    let body = body.collect().await?.to_bytes().to_vec();
+    let body = &body.collect().await?.to_bytes().to_vec();
 
     let pcs_req = pcs_core::types::Request {
         method,

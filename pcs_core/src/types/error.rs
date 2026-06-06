@@ -33,6 +33,7 @@ impl ErrorCode {
     pub const TEMPLATE_RENDER: ErrorCode = ErrorCode(45);
 
     pub const PHI_INFO_VERSION_MISMATCH: ErrorCode = ErrorCode(50);
+    pub const PHI_INFO_CALL_ERROR: ErrorCode = ErrorCode(51);
 
     pub const INVALID_PART_NUMBER: ErrorCode = ErrorCode(61);
     pub const ROUTE_NOT_FOUND: ErrorCode = ErrorCode(62);

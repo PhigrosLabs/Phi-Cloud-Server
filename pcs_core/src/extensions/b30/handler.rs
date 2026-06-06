@@ -9,12 +9,9 @@ use super::template::*;
 use super::types::SongInfo;
 use super::utils::*;
 use crate::extensions::save::save_provider::SaveProvider;
-use crate::game::model::GameSave;
+use crate::game::model::{GameSave, GameSaveIdsByUser};
 use crate::types::{
-    PCSBackend, PCSError,
-    error::ErrorCode,
-    file_bucket::FileBucket,
-    kv::{KVStorage, KVTable},
+    PCSBackend, PCSError, error::ErrorCode, file_bucket::FileBucket, kv::KVStorage,
 };
 use crate::user;
 use crate::utils::{MapPCSError, stream_to_bytes};
@@ -25,20 +22,11 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
 ) -> Result<String, PCSError> {
     let session = user::get_session_by_token(backend, session_token).await?;
     let kv = backend.kv();
-    let games_by_user = kv
-        .open_table("game_saves_by_user")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-    let game_saves = kv
-        .open_table("game_saves")
-        .await
-        .map_pcs_error(ErrorCode::KV_OPEN_TABLE)?;
-
-    let gs_ids: Vec<String> = games_by_user
-        .get(&session.object_id)
+    let GameSaveIdsByUser(gs_ids) = kv
+        .get::<GameSaveIdsByUser>(&session.object_id)
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
-        .unwrap_or_default();
+        .unwrap_or(GameSaveIdsByUser(Vec::new()));
     if gs_ids.is_empty() {
         return Err(PCSError::not_found(
             ErrorCode::B30_NO_GAME_SAVES_FOUND,
@@ -46,8 +34,8 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
         ));
     }
 
-    let gs: GameSave = game_saves
-        .get(&gs_ids[0])
+    let gs: GameSave = kv
+        .get::<GameSave>(&gs_ids[0])
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
         .ok_or_else(PCSError::db_not_found)?;

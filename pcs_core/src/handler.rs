@@ -55,7 +55,7 @@ impl PhiCloudServer {
             // =========================
             ("POST", ["1.1", "users"]) => {
                 let rb: RegisterBody =
-                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
+                    serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 created(&user::handle_register(backend, rb.auth_data.taptap).await?)
             }
 
@@ -65,7 +65,7 @@ impl PhiCloudServer {
 
             ("PUT", ["1.1", "users", obj_id]) | ("PUT", ["1.1", "classes", "_User", obj_id]) => {
                 let params =
-                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
+                    serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 ok(&user::handle_update(backend, obj_id, params).await?)
             }
 
@@ -83,7 +83,7 @@ impl PhiCloudServer {
             // =========================
             ("POST", ["1.1", "fileTokens"]) => {
                 let params =
-                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
+                    serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 created(
                     &file::handle_create_token(backend, Self::st(st)?, params, server_url).await?,
                 )
@@ -143,7 +143,7 @@ impl PhiCloudServer {
                 ],
             ) => {
                 let params =
-                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
+                    serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 ok(&file::handle_complete_upload(backend, token_key, upload_id, params).await?)
             }
 
@@ -156,14 +156,14 @@ impl PhiCloudServer {
 
             ("POST", ["1.1", "classes", "_GameSave"]) => {
                 let params =
-                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
+                    serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
 
                 created(&game::handle_create(backend, Self::st(st)?, params).await?)
             }
 
             ("PUT", ["1.1", "classes", "_GameSave", obj_id]) => {
                 let params =
-                    serde_json::from_slice(&body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
+                    serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
 
                 ok(&game::handle_update(backend, obj_id, Self::st(st)?, params).await?)
             }
@@ -191,7 +191,7 @@ impl PhiCloudServer {
             #[cfg(feature = "extension_save")]
             ("PUT", ["extension", "save", session_token]) => {
                 use crate::extensions::save::handler::handle_save_extension_put;
-                handle_save_extension_put(backend, session_token, &body).await?;
+                handle_save_extension_put(backend, session_token, body).await?;
                 no_content()
             }
 
