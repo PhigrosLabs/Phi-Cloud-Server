@@ -1,20 +1,14 @@
 use core::convert::Infallible;
 use core::fmt;
 
-use aes::cipher::BlockEncryptMut;
+use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyIvInit, block_padding::Pkcs7};
 use alloc::vec::Vec;
 
-use aes::Aes256;
-use cbc::Decryptor;
-use cbc::Encryptor;
-use cbc::cipher::block_padding::Pkcs7;
-use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
 use phi_save_codec::Binary;
 use phi_save_codec::{GameKey, GameProgress, GameRecord, Settings, User};
 use shua_zip::{ReadAt, ZipArchive, ZipError};
-
-type Aes256CbcDec = Decryptor<Aes256>;
-type Aes256CbcEnc = Encryptor<Aes256>;
 
 #[derive(Debug)]
 pub enum SaveError {
@@ -22,6 +16,7 @@ pub enum SaveError {
     FileNotFound(&'static str),
     EmptyEntry(&'static str),
     DecryptionFailed,
+    EncryptionFailed,
     CodecFailed,
 }
 
@@ -33,6 +28,9 @@ impl fmt::Display for SaveError {
             SaveError::EmptyEntry(name) => write!(f, "File entry is empty: {}", name),
             SaveError::DecryptionFailed => {
                 write!(f, "AES-256-CBC decryption or PKCS7 unpadding failed")
+            }
+            SaveError::EncryptionFailed => {
+                write!(f, "AES-256-CBC encryption or PKCS7 padding failed")
             }
             SaveError::CodecFailed => {
                 write!(f, "Failed to parse game data structure (Codec error)")
@@ -152,18 +150,37 @@ impl<'a> SaveProvider<'a> {
         let mut buf = data.to_vec();
 
         let pt = Aes256CbcDec::new(AES_KEY.into(), AES_IV.into())
-            .decrypt_padded_mut::<Pkcs7>(&mut buf)
+            .decrypt_padded::<Pkcs7>(&mut buf)
             .map_err(|_| SaveError::DecryptionFailed)?;
+        let pt_len = pt.len();
+        buf.truncate(pt_len);
+        Ok(buf)
+    }
 
-        Ok(pt.to_vec())
+    fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, SaveError> {
+        let mut encrypt_buf = alloc::vec![0u8; data.len() + 16];
+        encrypt_buf[..data.len()].copy_from_slice(data);
+
+        let ct_len = Aes256CbcEnc::new(AES_KEY.into(), AES_IV.into())
+            .encrypt_padded::<Pkcs7>(&mut encrypt_buf, data.len())
+            .map_err(|_| SaveError::EncryptionFailed)?
+            .len();
+
+        encrypt_buf.truncate(ct_len);
+        Ok(encrypt_buf)
     }
 
     fn read_decrypted<T: Binary>(&self, name: &'static str) -> Result<T, SaveError> {
         let raw = self.get_entry_raw(name)?;
         let (version, body) = raw.split_first().ok_or(SaveError::EmptyEntry(name))?;
-        let mut decrypted = self.decrypt(body)?;
-        decrypted.insert(0, *version);
-        T::read(&decrypted).map_err(|_| SaveError::CodecFailed)
+
+        let decrypted_body = self.decrypt(body)?;
+
+        let mut full_data = Vec::with_capacity(1 + decrypted_body.len());
+        full_data.push(*version);
+        full_data.extend_from_slice(&decrypted_body);
+
+        T::read(&full_data).map_err(|_| SaveError::CodecFailed)
     }
 
     fn write_encrypted<T: Binary>(
@@ -178,15 +195,12 @@ impl<'a> SaveProvider<'a> {
 
         let (version, body) = raw_data.split_first().ok_or(SaveError::EmptyEntry(name))?;
 
-        let mut encrypt_buf = alloc::vec![0u8; body.len() + 16];
-        encrypt_buf[..body.len()].copy_from_slice(body);
+        let ct = self.encrypt(body)?;
 
-        let ct = Aes256CbcEnc::new(AES_KEY.into(), AES_IV.into())
-            .encrypt_padded_mut::<Pkcs7>(&mut encrypt_buf, body.len())
-            .map_err(|_| SaveError::DecryptionFailed)?;
         let mut final_payload = Vec::with_capacity(1 + ct.len());
         final_payload.push(*version);
-        final_payload.extend_from_slice(ct);
+        final_payload.extend_from_slice(&ct);
+
         if let Some(index) = self.archive.find_by_name(name) {
             self.archive.remove_file(index);
         }

@@ -52,35 +52,49 @@ impl PhiCloudServer {
         match (method, segs.as_slice()) {
             // =========================
             // User routes
+            // https://developer.taptap.cn/docs/v3/sdk/authentication/rest/
+            // 仅支持TapTap登录,非全部实现
             // =========================
-            ("POST", ["1.1", "users"]) => {
+
+            // /1.1/users POST 用户注册 用户连接
+            ("POST", ["1.1", "users"]) | ("POST", ["1.1", "classes", "_User"]) => {
                 let rb: RegisterBody =
                     serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 created(&user::handle_register(backend, rb.auth_data.taptap).await?)
             }
 
+            // /1.1/users/me GET 根据 sessionToken 获取用户信息
             ("GET", ["1.1", "users", "me"]) => {
                 ok(&user::handle_get_current(backend, Self::st(st)?).await?)
             }
 
+            // /1.1/users/<objectId> PUT 更新用户 用户连接 验证Email
+            // 仅支持更新用户名
             ("PUT", ["1.1", "users", obj_id]) | ("PUT", ["1.1", "classes", "_User", obj_id]) => {
                 let params =
                     serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
                 ok(&user::handle_update(backend, obj_id, params).await?)
             }
 
+            // /1.1/users/<objectId>/refreshSessionToken PUT 刷新 sessionToken
             ("PUT", ["1.1", "users", obj_id, "refreshSessionToken"]) => {
                 ok(&user::handle_refresh_token(backend, obj_id, Self::st(st)?).await?)
             }
 
-            ("DELETE", ["1.1", "users", obj_id]) => {
+            // /1.1/users/<objectId> DELETE 删除用户
+            ("DELETE", ["1.1", "users", obj_id])
+            | ("DELETE", ["1.1", "classes", "_User", obj_id]) => {
                 user::handle_delete(backend, obj_id, Self::st(st)?).await?;
                 no_content()
             }
 
             // =========================
             // File routes
+            // https://developer.taptap.cn/docs/v3/sdk/storage/guide/rest/#%E6%96%87%E4%BB%B6
+            // 非全部实现
             // =========================
+
+            // 私有接口
             ("POST", ["1.1", "fileTokens"]) => {
                 let params =
                     serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
@@ -89,6 +103,7 @@ impl PhiCloudServer {
                 )
             }
 
+            // 私有接口
             ("GET", ["1.1", "files", obj_id]) => {
                 let stream = file::handle_download(backend, obj_id).await?;
                 Ok(Response {
@@ -98,15 +113,18 @@ impl PhiCloudServer {
                 })
             }
 
+            // https://developer.taptap.cn/docs/v3/sdk/storage/guide/rest/#%E5%88%A0%E9%99%A4%E6%96%87%E4%BB%B6
             ("DELETE", ["1.1", "files", obj_id]) => {
                 file::handle_delete(backend, obj_id).await?;
                 no_content()
             }
 
+            // 私有接口
             ("POST", ["1.1", "fileCallback"]) => ok(&file::handle_callback(backend).await?),
 
             // =========================
             // Upload routes
+            // 私有接口
             // =========================
             ("POST", ["buckets", _bucket, "objects", token_key, "uploads"]) => {
                 created(&file::handle_start_upload(backend, token_key).await?)
@@ -149,23 +167,37 @@ impl PhiCloudServer {
 
             // =========================
             // Game save routes
+            // https://developer.taptap.cn/docs/v3/sdk/gamesaves/guide/#%E6%8E%A5%E5%8F%A3%E5%88%97%E8%A1%A8
+            // 未实现获取单个存档
             // =========================
-            ("GET", ["1.1", "classes", "_GameSave"]) => {
+
+            // 查询存档 GET /gamesaves 根据查询条件查询存档
+            ("GET", ["1.1", "classes", "_GameSave"]) | ("GET", ["1.1", "gamesaves"]) => {
                 ok(&game::handle_list(backend, Self::st(st)?, server_url).await?)
             }
 
-            ("POST", ["1.1", "classes", "_GameSave"]) => {
+            // 添加存档 POST /gamesaves 增加新存档
+            ("POST", ["1.1", "classes", "_GameSave"]) | ("POST", ["1.1", "gamesaves"]) => {
                 let params =
                     serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
 
                 created(&game::handle_create(backend, Self::st(st)?, params).await?)
             }
 
-            ("PUT", ["1.1", "classes", "_GameSave", obj_id]) => {
+            // 更新存档 PUT /gamesaves/:id 根据 id 更新存档
+            ("PUT", ["1.1", "classes", "_GameSave", obj_id])
+            | ("PUT", ["1.1", "gamesaves", obj_id]) => {
                 let params =
                     serde_json::from_slice(body).map_pcs_bad(ErrorCode::JSON_DESERIALIZE)?;
 
                 ok(&game::handle_update(backend, obj_id, Self::st(st)?, params).await?)
+            }
+
+            // 删除存档 DELETE /gamesaves/:id 根据 id 删除文档(taptap把存档打错成文档了)
+            ("DELETE", ["1.1", "classes", "_GameSave", obj_id])
+            | ("DELETE", ["1.1", "gamesaves", obj_id]) => {
+                game::handle_delete(backend, obj_id, Self::st(st)?).await?;
+                no_content()
             }
 
             // =========================
@@ -194,12 +226,6 @@ impl PhiCloudServer {
                 handle_save_extension_put(backend, session_token, body).await?;
                 no_content()
             }
-
-            #[cfg(debug_assertions)]
-            ("GET", ["debug", "error"]) => Err(PCSError::internal_error(
-                ErrorCode::B30_GET_GAME_PROGRESS,
-                "debug route, not for production",
-            )),
 
             _ => Err(PCSError::not_found(
                 ErrorCode::ROUTE_NOT_FOUND,

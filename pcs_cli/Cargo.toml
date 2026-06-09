@@ -21,6 +21,7 @@ http = "1"
 bytes = "1"
 hyper = { version = "1", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
-pin-project-lite = "0.2.17"
-http-body = "1"
 http-body-util = "0.1"
+hyper-util = { version = "0.1", default-features = false, features = ["server-auto"] }
+rustls = { version = "0.23", default-features = false, features = ["tls12"] }
+tokio-rustls = "0.26"

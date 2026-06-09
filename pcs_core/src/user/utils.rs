@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use crate::{
     types::{
         backend::PCSBackend,
@@ -32,6 +34,18 @@ pub async fn get_session_by_object_id<B: PCSBackend>(
     get_session_by_token(backend, &token).await
 }
 
+pub async fn get_session_token_by_openid<B: PCSBackend>(
+    backend: &B,
+    openid: &str,
+) -> Result<Option<String>, PCSError> {
+    let kv = backend.kv();
+    Ok(kv
+        .get::<SessionTokenByOpenId>(openid)
+        .await
+        .map_pcs_error(ErrorCode::KV_GET)?
+        .map(|SessionTokenByOpenId(token)| token))
+}
+
 pub async fn save_session<B: PCSBackend>(backend: &B, session: &Session) -> Result<(), PCSError> {
     let kv = backend.kv();
     kv.put::<Session>(&session.session_token, session)
@@ -39,10 +53,32 @@ pub async fn save_session<B: PCSBackend>(backend: &B, session: &Session) -> Resu
         .map_pcs_error(ErrorCode::KV_PUT)
 }
 
-pub async fn delete_session_tables<B: PCSBackend>(
+pub async fn put_session_with_indices<B: PCSBackend>(
     backend: &B,
     session: &Session,
 ) -> Result<(), PCSError> {
+    let kv = backend.kv();
+    kv.put::<Session>(&session.session_token, session)
+        .await
+        .map_pcs_error(ErrorCode::KV_PUT)?;
+    kv.put::<SessionTokenByOpenId>(
+        &session.openid,
+        &SessionTokenByOpenId(session.session_token.clone()),
+    )
+    .await
+    .map_pcs_error(ErrorCode::KV_PUT)?;
+    kv.put::<SessionTokenByObjId>(
+        &session.object_id,
+        &SessionTokenByObjId(session.session_token.clone()),
+    )
+    .await
+    .map_pcs_error(ErrorCode::KV_PUT)?;
+    Ok(())
+}
+
+// ── Session 删除 ──
+
+pub async fn delete_session<B: PCSBackend>(backend: &B, session: &Session) -> Result<(), PCSError> {
     let kv = backend.kv();
     kv.delete::<Session>(&session.session_token)
         .await

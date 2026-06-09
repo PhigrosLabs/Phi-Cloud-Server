@@ -3,6 +3,12 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default = "default_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub tls_cert: String,
+    #[serde(default)]
+    pub tls_key: String,
     #[serde(default)]
     pub webhook_url: String,
     #[serde(default = "default_data_dir")]
@@ -11,6 +17,10 @@ pub struct Config {
     pub server_url: String,
     #[serde(default = "default_phi_info_url")]
     pub phi_info_url: String,
+}
+
+fn default_port() -> u16 {
+    3000
 }
 
 fn default_data_dir() -> PathBuf {
@@ -28,6 +38,9 @@ fn default_phi_info_url() -> String {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            port: default_port(),
+            tls_cert: String::new(),
+            tls_key: String::new(),
             webhook_url: String::new(),
             data_dir: default_data_dir(),
             server_url: default_server_url(),

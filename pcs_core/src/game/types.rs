@@ -1,4 +1,4 @@
-use crate::file::FileTokenResponse;
+use crate::{file::FileTokenResponse, types::Date};
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
@@ -23,28 +23,12 @@ impl Pointer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GameDate {
-    #[serde(rename = "__type")]
-    pub type_field: String,
-    pub iso: String,
-}
-
-impl GameDate {
-    pub fn new(iso: impl Into<String>) -> Self {
-        Self {
-            type_field: "Date".into(),
-            iso: iso.into(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSaveParams {
     pub summary: String,
     #[serde(rename = "gameFile")]
     pub game_file: Pointer,
     #[serde(rename = "modifiedAt")]
-    pub modified_at: GameDate,
+    pub modified_at: Date,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,7 +36,7 @@ pub struct UpdateGameSaveParams {
     pub summary: String,
     pub name: String,
     #[serde(rename = "modifiedAt")]
-    pub modified_at: GameDate,
+    pub modified_at: Date,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,7 +54,7 @@ pub struct GameSaveItem {
     pub game_file: FileTokenResponse,
     pub user: Pointer,
     #[serde(rename = "modifiedAt")]
-    pub modified_at: GameDate,
+    pub modified_at: Date,
     pub name: String,
     #[serde(rename = "objectId")]
     pub object_id: String,

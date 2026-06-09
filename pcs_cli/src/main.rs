@@ -2,8 +2,8 @@ mod backend;
 mod config;
 mod file_bucket;
 mod kv;
-mod tokios;
 
+use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -17,16 +17,23 @@ use futures::TryStreamExt;
 use http::{Request, Response};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
-use hyper::server::conn::http1;
 use hyper::service::service_fn;
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::server::conn::auto::Builder;
 use kv::RedbKVStorage;
 use pcs_core::handler::PhiCloudServer;
 use pcs_core::types::ByteStream;
+use rustls::ServerConfig;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::net::TcpListener;
-
-use crate::tokios::TokioIo;
+use tokio_rustls::TlsAcceptor;
 
 type AppState = Arc<CliBackend>;
+
+fn io_error(msg: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Error {
+    io::Error::other(msg)
+}
 
 async fn stream_to_bytes<S: ByteStream>(stream: S) -> Vec<u8> {
     let chunks: Result<Vec<Vec<u8>>, _> = stream.try_collect().await;
@@ -89,10 +96,6 @@ struct Cli {
     /// Config file path
     #[arg(short = 'c', long = "config", default_value = "./config.json")]
     config: PathBuf,
-
-    /// Listen port
-    #[arg(short = 'p', long = "port", default_value = "3000")]
-    port: u16,
 }
 
 #[tokio::main]
@@ -101,8 +104,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config = Config::load(cli.config.to_str().expect("invalid config path"))
         .expect("failed to load config");
-
-    let port = cli.port;
 
     let data_dir = &config.data_dir;
 
@@ -133,23 +134,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let backend = Arc::new(backend);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
 
     let listener = TcpListener::bind(addr).await?;
 
-    println!("Listening on http://{}", addr);
+    let tls_acceptor: Option<TlsAcceptor> =
+        if !config.tls_cert.is_empty() && !config.tls_key.is_empty() {
+            let certs = CertificateDer::pem_file_iter(&config.tls_cert)
+                .map_err(|e| {
+                    io_error(format!(
+                        "could not read certificate file '{}': {e}",
+                        config.tls_cert
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| io_error(format!("could not parse certificate file: {e}")))?;
+            let key = PrivateKeyDer::from_pem_file(&config.tls_key).map_err(|e| {
+                io_error(format!(
+                    "could not read private key file '{}': {e}",
+                    config.tls_key
+                ))
+            })?;
+
+            let mut server_config = ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(certs, key)
+                .map_err(|e| io_error(e.to_string()))?;
+            server_config.alpn_protocols =
+                vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+            let acceptor = TlsAcceptor::from(Arc::new(server_config));
+            println!("TLS enabled, listening on https://{}", addr);
+            Some(acceptor)
+        } else {
+            println!("Listening on http://{}", addr);
+            None
+        };
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (tcp_stream, _) = listener.accept().await?;
 
-        let io = TokioIo::new(stream);
+        let tls_acceptor = tls_acceptor.clone();
         let service_server = backend.clone();
 
-        let service = service_fn(move |req| handle_req(service_server.clone(), req));
+        tokio::spawn(async move {
+            let service = service_fn(move |req| handle_req(service_server.clone(), req));
 
-        tokio::task::spawn(async move {
-            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                println!("Error serving connection: {:?}", err);
+            if let Some(tls_acceptor) = tls_acceptor {
+                match tls_acceptor.accept(tcp_stream).await {
+                    Ok(tls_stream) => {
+                        if let Err(err) = Builder::new(TokioExecutor::new())
+                            .serve_connection(TokioIo::new(tls_stream), service)
+                            .await
+                        {
+                            eprintln!("failed to serve tls connection: {err:#}");
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("failed to perform tls handshake: {err:#}");
+                    }
+                }
+            } else {
+                if let Err(err) = Builder::new(TokioExecutor::new())
+                    .serve_connection(TokioIo::new(tcp_stream), service)
+                    .await
+                {
+                    eprintln!("failed to serve connection: {err:#}");
+                }
             }
         });
     }

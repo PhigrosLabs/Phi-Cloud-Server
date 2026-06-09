@@ -2,37 +2,83 @@
 name = "pcs_core"
 version = "0.1.0"
 edition = "2024"
-authors = ["Shua-github <CHA_shua@outlook.com>"]
+authors = [ "Shua-github <CHA_shua@outlook.com>" ]
 license = "MIT"
 rust-version = "1.88.0"
 
 [lib]
 
+
 [dependencies]
-serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
-serde_json = { version = "1", default-features = false, features = ["alloc"] }
-chrono = { version = "0.4", default-features = false, features = ["alloc","serde"] }
-base64 = { version = "0.22", default-features = false, features = ["alloc"] }
-futures = { version = "0.3", default-features = false, features = ["alloc"] }
 send-future = "0.1"
 trait-variant = "0.1"
-# extensions-save start
-aes = {version = "0.8", optional = true}
-cbc = {version = "0.1", optional = true}
-shua_zip = {version = "0.1.1", optional = true}
-phi_save_codec ={ version = "0.4", optional = true}
-md-5 = { version = "0.11", default-features = false, optional = true }
-hex = { version = "0.4", default-features = false, optional = true, features = ["alloc"] }
-# extensions-save end
 
-# extensions-query start
-askama = { version = "0.16", default-features = false, features = ["alloc", "derive"], optional = true }
-# extensions-query end
+[dependencies.serde]
+version = "1"
+default-features = false
+features = [ "alloc", "derive" ]
+
+[dependencies.serde_json]
+version = "1"
+default-features = false
+features = [ "alloc" ]
+
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = [ "alloc", "serde" ]
+
+[dependencies.base64]
+version = "0.22"
+default-features = false
+features = [ "alloc" ]
+
+[dependencies.futures]
+version = "0.3"
+default-features = false
+features = [ "alloc" ]
+
+[dependencies.serde-tuple-vec-map]
+version = "1"
+default-features = false
+
+[dependencies.aes]
+version = "0.9"
+optional = true
+
+[dependencies.cbc]
+version = "0.2"
+optional = true
+
+[dependencies.shua_zip]
+version = "0.1.1"
+optional = true
+
+[dependencies.phi_save_codec]
+version = "0.4"
+optional = true
+
+[dependencies.md-5]
+version = "0.11"
+default-features = false
+optional = true
+
+[dependencies.hex]
+version = "0.4"
+default-features = false
+optional = true
+features = [ "alloc" ]
+
+[dependencies.askama]
+version = "0.16"
+default-features = false
+features = [ "alloc", "derive" ]
+optional = true
 
 [features]
-default = ["extensions"]
-extensions = ["extension_save","extension_query"]
-extension_save = ["aes","cbc","shua_zip","phi_save_codec","md-5","hex"]
-extension_query_base = ["extension_save"]
-extension_query = ["extension_query_b30"]
-extension_query_b30 = ["askama","extension_query_base"]
+default = [ "extensions" ]
+extensions = [ "extension_save", "extension_query" ]
+extension_save = [ "aes", "cbc", "shua_zip", "phi_save_codec", "md-5", "hex" ]
+extension_query_base = [ "extension_save" ]
+extension_query = [ "extension_query_b30" ]
+extension_query_b30 = [ "askama", "extension_query_base" ]

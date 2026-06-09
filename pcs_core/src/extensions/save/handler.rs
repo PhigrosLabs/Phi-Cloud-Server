@@ -217,7 +217,7 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
     };
 
     let meta_data = MetaData::new(new_data.len() as u64, checksum, ft.meta_data.prefix.clone());
-    let new_ft = FileToken::new(meta_data, ft.name.clone(), ft.acl.clone(), backend);
+    let new_ft = FileToken::new(meta_data, backend);
     file::save_file_token(backend, &new_ft).await?;
 
     fb.put(&new_ft.key, &new_data)
@@ -225,7 +225,6 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
         .map_pcs_error(ErrorCode::FB_PUT)?;
 
     let utc_now = backend.utc_now();
-    gs.modified_at = utc_now.to_rfc3339_z();
     gs.game_file_object_id = new_ft.key;
     gs.updated_at = utc_now;
     kv.put::<GameSave>(&gs.object_id, &gs)

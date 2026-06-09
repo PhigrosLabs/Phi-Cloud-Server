@@ -26,8 +26,6 @@ pub struct FileTokenResponse {
     pub token: String,
     #[serde(rename = "metaData")]
     pub meta_data: MetaData,
-    #[serde(rename = "ACL")]
-    pub acl: ACL,
     pub bucket: String,
     #[serde(rename = "upload_url")]
     pub upload_url: String,

@@ -6,7 +6,6 @@ use crate::{
         backend::PCSBackend,
         error::{ErrorCode, PCSError},
         file_bucket::{FileBucket, MultipartUpload, UploadedPart},
-        kv::KVStorage,
     },
     user,
 };
@@ -20,7 +19,7 @@ pub async fn handle_create_token<B: PCSBackend>(
     server_url: &str,
 ) -> Result<FileTokenResponse, PCSError> {
     user::get_session_by_token(backend, session_token).await?;
-    let ft = FileToken::new(params.meta_data, params.name, params.acl, backend);
+    let ft = FileToken::new(params.meta_data, backend);
 
     save_file_token(backend, &ft).await?;
     Ok(ft.to_response(server_url))
@@ -28,17 +27,7 @@ pub async fn handle_create_token<B: PCSBackend>(
 
 pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Result<(), PCSError> {
     let ft = get_file_token(backend, object_id).await?;
-
-    let fb = backend.fb();
-    fb.delete(&ft.key)
-        .await
-        .map_pcs_error(ErrorCode::FB_DELETE)?;
-
-    let kv = backend.kv();
-    kv.delete::<FileToken>(&ft.key)
-        .await
-        .map_pcs_error(ErrorCode::KV_DELETE)?;
-
+    delete_file_token(backend, &ft.key).await?;
     Ok(())
 }
 
@@ -47,8 +36,7 @@ pub async fn handle_download<B: PCSBackend>(
     object_id: &str,
 ) -> Result<<B::FB as FileBucket>::Stream, PCSError> {
     let ft = get_file_token(backend, object_id).await?;
-    let fb = backend.fb();
-    fb.get(&ft.key).await.map_pcs_error(ErrorCode::FB_GET)
+    get_file_stream(backend, &ft.key).await
 }
 
 pub async fn handle_callback<B: PCSBackend>(

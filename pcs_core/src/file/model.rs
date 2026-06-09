@@ -1,5 +1,5 @@
 use crate::{
-    types::{ACL, KVTable, OCTET_STREAM_CONTENT_TYPE, backend::PCSBackend},
+    types::{KVTable, OCTET_STREAM_CONTENT_TYPE, backend::PCSBackend},
     utils::ToRfc3339Z,
 };
 use alloc::{
@@ -33,9 +33,6 @@ impl MetaData {
 pub struct FileToken {
     pub key: String,
     pub meta_data: MetaData,
-    pub name: String,
-    pub token: String,
-    pub acl: ACL,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -45,20 +42,11 @@ impl KVTable for FileToken {
 }
 
 impl FileToken {
-    pub fn new(
-        meta_data: MetaData,
-        name: impl Into<String>,
-        acl: ACL,
-        backend: &impl PCSBackend,
-    ) -> Self {
+    pub fn new(meta_data: MetaData, backend: &impl PCSBackend) -> Self {
         let now = backend.utc_now();
-        let name = name.into();
         Self {
             key: backend.random_id(),
             meta_data,
-            name,
-            token: backend.random_id(),
-            acl,
             created_at: now,
             updated_at: now,
         }
@@ -69,10 +57,9 @@ impl FileToken {
             type_field: "File".into(),
             object_id: self.key.clone(),
             key: self.key.clone(),
-            name: self.name.clone(),
-            token: self.token.clone(),
+            name: ".save".into(),
+            token: "unknown".into(),
             meta_data: self.meta_data.clone(),
-            acl: self.acl.clone(),
             bucket: "file".into(),
             upload_url: server_url.to_string(),
             url: format!("{}/1.1/files/{}", server_url, self.key),

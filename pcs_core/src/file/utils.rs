@@ -1,6 +1,7 @@
 use crate::{
     file::model::FileToken,
     types::{
+        FileBucket,
         backend::PCSBackend,
         error::{ErrorCode, PCSError},
         kv::KVStorage,
@@ -22,4 +23,22 @@ pub async fn save_file_token<B: PCSBackend>(backend: &B, ft: &FileToken) -> Resu
         .await
         .map_pcs_error(ErrorCode::KV_PUT)?;
     Ok(())
+}
+
+pub async fn delete_file_token<B: PCSBackend>(backend: &B, key: &str) -> Result<(), PCSError> {
+    let kv = backend.kv();
+    let fb = backend.fb();
+    fb.delete(key).await.map_pcs_error(ErrorCode::FB_DELETE)?;
+    kv.delete::<FileToken>(key)
+        .await
+        .map_pcs_error(ErrorCode::KV_DELETE)?;
+    Ok(())
+}
+
+pub async fn get_file_stream<B: PCSBackend>(
+    backend: &B,
+    key: &str,
+) -> Result<<B::FB as FileBucket>::Stream, PCSError> {
+    let fb = backend.fb();
+    fb.get(key).await.map_pcs_error(ErrorCode::FB_GET)
 }
