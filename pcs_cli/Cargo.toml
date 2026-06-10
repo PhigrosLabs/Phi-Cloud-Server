@@ -23,5 +23,5 @@ hyper = { version = "1", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
 http-body-util = "0.1"
 hyper-util = { version = "0.1", default-features = false, features = ["server-auto"] }
-rustls = { version = "0.23", default-features = false, features = ["tls12"] }
-tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["tls12", "ring"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
