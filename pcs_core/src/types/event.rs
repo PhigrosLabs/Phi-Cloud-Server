@@ -48,7 +48,7 @@ pub enum Event {
         user: EventUser,
         file_object_id: String,
         summary: String,
-    }
+    },
 }
 
 impl From<&Session> for EventUser {

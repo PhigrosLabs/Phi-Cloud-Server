@@ -77,6 +77,7 @@ pub async fn handle_update<B: PCSBackend>(
     let session = user::get_session_by_token(backend, session_token).await?;
     let mut gs = get_game_save(backend, object_id).await?;
 
+    gs.modified_at = params.modified_at.iso;
     gs.summary = params.summary;
     gs.game_file_object_id = params.game_file.object_id;
     gs.updated_at = backend.utc_now();
