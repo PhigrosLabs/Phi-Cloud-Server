@@ -9,10 +9,9 @@ use super::template::*;
 use super::types::SongInfo;
 use super::utils::*;
 use crate::extensions::save::save_provider::SaveProvider;
+use crate::file::get_file;
 use crate::game::model::{GameSave, GameSaveIdsByUser};
-use crate::types::{
-    PCSBackend, PCSError, error::ErrorCode, file_bucket::FileBucket, kv::KVStorage,
-};
+use crate::types::{PCSBackend, PCSError, error::ErrorCode, kv::KVStorage};
 use crate::user;
 use crate::utils::{MapPCSError, stream_to_bytes};
 
@@ -39,11 +38,9 @@ pub async fn handle_b30_extension_get<B: PCSBackend>(
         .await
         .map_pcs_error(ErrorCode::KV_GET)?
         .ok_or_else(PCSError::db_not_found)?;
-    let fb = backend.fb();
-    let stream = fb
-        .get(&gs.game_file_object_id)
-        .await
-        .map_pcs_error(ErrorCode::FB_GET)?;
+    let (_, stream) = get_file(backend, &gs.game_file_object_id)
+        .await?
+        .ok_or(PCSError::internal_error(ErrorCode::FB_GET, "file no found"))?;
     let data = stream_to_bytes(stream)
         .await
         .map_pcs_error(ErrorCode::FB_GET)?;

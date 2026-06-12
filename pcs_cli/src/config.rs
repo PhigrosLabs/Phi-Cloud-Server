@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::PathBuf,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    #[serde(default = "default_port")]
-    pub port: u16,
+    #[serde(default = "default_addr")]
+    pub addr: SocketAddr,
     #[serde(default)]
     pub tls_cert: String,
     #[serde(default)]
@@ -19,8 +22,8 @@ pub struct Config {
     pub phi_info_url: String,
 }
 
-fn default_port() -> u16 {
-    3000
+fn default_addr() -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 3000)
 }
 
 fn default_data_dir() -> PathBuf {
@@ -38,7 +41,7 @@ fn default_phi_info_url() -> String {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            port: default_port(),
+            addr: default_addr(),
             tls_cert: String::new(),
             tls_key: String::new(),
             webhook_url: String::new(),

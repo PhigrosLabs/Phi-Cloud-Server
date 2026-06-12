@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
+use chrono::DateTime;
 use pcs_core::types::{
-    ErrorCode,
+    ErrorCode, Metadata,
     backend::{PCSBackend, UserCheckResult},
     error::PCSError,
     event::Event,
@@ -168,21 +171,33 @@ pub struct R2MultipartUpload {
     upload: Option<worker::MultipartUpload>,
 }
 
+fn obj_meta_data(obj: &Object) -> Result<ObjectMetadata, worker::Error> {
+    let update_at = DateTime::from_timestamp_millis(obj.uploaded().as_millis() as i64)
+        .ok_or(worker::Error::RustError("time error".into()))?;
+    Ok(ObjectMetadata {
+        key: obj.key(),
+        etag: obj.etag(),
+        size: obj.size(),
+        update_at,
+        custom_metadata: obj.custom_metadata()?.into_iter().collect(),
+    })
+}
+
 impl pcs_core::types::file_bucket::MultipartUpload for R2MultipartUpload {
     type Error = worker::Error;
 
     async fn upload_part(
         &mut self,
-        part_number: u32,
+        part_number: u16,
         data: &[u8],
     ) -> Result<UploadedPart, Self::Error> {
         let upload = self
             .upload
             .as_ref()
-            .ok_or_else(|| worker::Error::RustError("upload already completed".into()))?;
+            .ok_or(worker::Error::RustError("upload already completed".into()))?;
         let pn = part_number as u16;
         let part = UnsafeSend(async move { upload.upload_part(pn, data.to_vec()).await }).await?;
-        Ok(UploadedPart::new(part.part_number() as i32, part.etag()))
+        Ok(UploadedPart::new(part.part_number(), part.etag()))
     }
 
     async fn complete(&mut self, parts: Vec<UploadedPart>) -> Result<ObjectMetadata, Self::Error> {
@@ -194,11 +209,10 @@ impl pcs_core::types::file_bucket::MultipartUpload for R2MultipartUpload {
         let upload = self
             .upload
             .take()
-            .ok_or_else(|| worker::Error::RustError("upload already completed".into()))?;
+            .ok_or(worker::Error::RustError("upload already completed".into()))?;
 
         let obj = UnsafeSend(async move { upload.complete(r2_parts).await }).await?;
-
-        Ok(ObjectMetadata::new(obj.key(), obj.http_etag(), obj.size()))
+        obj_meta_data(&obj)
     }
 
     async fn abort(&mut self) -> Result<(), Self::Error> {
@@ -211,48 +225,58 @@ impl pcs_core::types::file_bucket::MultipartUpload for R2MultipartUpload {
 
 impl FileBucket for WorkerBackend {
     type MultipartUpload = R2MultipartUpload;
-    type Error = PCSError;
+    type Error = worker::Error;
     type Stream = UnsafeStream<worker::ByteStream>;
 
-    async fn head(&self, key: &str) -> Result<ObjectMetadata, Self::Error> {
+    async fn head(&self, key: &str) -> Result<Option<ObjectMetadata>, Self::Error> {
         let bucket = &self.r2;
-        let obj = UnsafeSend(async move { bucket.head(key).await })
-            .await
-            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
-            .ok_or_else(|| PCSError::not_found(ERROR_CODE, "object not found"))?;
-        Ok(ObjectMetadata::new(obj.key(), obj.http_etag(), obj.size()))
+        let obj = UnsafeSend(async move { bucket.head(key).await }).await?;
+
+        obj.map(|obj| obj_meta_data(&obj)).transpose()
     }
 
-    async fn get(&self, key: &str) -> Result<Self::Stream, Self::Error> {
+    async fn get(&self, key: &str) -> Result<Option<(ObjectMetadata, Self::Stream)>, Self::Error> {
         let bucket = &self.r2;
-        let obj = UnsafeSend(async move { bucket.get(key).execute().await })
-            .await
-            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
-            .ok_or_else(|| PCSError::not_found(ERROR_CODE, "object not found"))?;
 
-        let body = obj
-            .body()
-            .ok_or_else(|| PCSError::not_found(ERROR_CODE, "object has no body"))?;
-        let byte_stream = body
-            .stream()
-            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
+        let obj = UnsafeSend(async move { bucket.get(key).execute().await }).await?;
 
-        Ok(UnsafeStream(byte_stream))
+        obj.map(|obj| {
+            let metadata = obj_meta_data(&obj)?;
+
+            let body = match obj.body() {
+                Some(body) => body,
+                None => return Ok(None),
+            };
+
+            let byte_stream = body.stream()?;
+
+            Ok(Some((metadata, UnsafeStream(byte_stream))))
+        })
+        .transpose()
+        .map(|x| x.flatten())
     }
 
     async fn delete(&self, key: &str) -> Result<(), Self::Error> {
         let bucket = &self.r2;
-        UnsafeSend(async move { bucket.delete(key).await })
-            .await
-            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
+        UnsafeSend(async move { bucket.delete(key).await }).await?;
         Ok(())
     }
 
-    async fn create_multipart_upload(&self, key: &str) -> Result<String, Self::Error> {
+    async fn create_multipart_upload(
+        &self,
+        key: &str,
+        meta_data: Metadata,
+    ) -> Result<String, Self::Error> {
         let bucket = &self.r2;
-        let upload = UnsafeSend(async move { bucket.create_multipart_upload(key).execute().await })
-            .await
-            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
+        let map: HashMap<String, String> = meta_data.into_iter().collect();
+        let upload = UnsafeSend(async move {
+            bucket
+                .create_multipart_upload(key)
+                .custom_metadata(map)
+                .execute()
+                .await
+        })
+        .await?;
         Ok(UnsafeSend(async move { upload.upload_id().await }).await)
     }
 
@@ -261,23 +285,29 @@ impl FileBucket for WorkerBackend {
         key: &str,
         upload_id: &str,
     ) -> Result<Self::MultipartUpload, Self::Error> {
-        let upload = self
-            .r2
-            .resume_multipart_upload(key, upload_id)
-            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?;
+        let upload = self.r2.resume_multipart_upload(key, upload_id)?;
         Ok(R2MultipartUpload {
             upload: Some(upload),
         })
     }
 
-    async fn put(&self, key: &str, data: &[u8]) -> Result<ObjectMetadata, Self::Error> {
+    async fn put(
+        &self,
+        key: &str,
+        data: &[u8],
+        meta_data: Metadata,
+    ) -> Result<ObjectMetadata, Self::Error> {
         let bucket = &self.r2;
-        let obj = UnsafeSend(async move { bucket.put(key, data.to_vec()).execute().await })
-            .await
-            .map_err(|e| PCSError::internal_error(ERROR_CODE, e.to_string()))?
-            .ok_or_else(|| {
-                PCSError::internal_error(ERROR_CODE, "put returned no object".to_string())
-            })?;
-        Ok(ObjectMetadata::new(obj.key(), obj.http_etag(), obj.size()))
+        let map: HashMap<String, String> = meta_data.into_iter().collect();
+        let obj = UnsafeSend(async move {
+            bucket
+                .put(key, data.to_vec())
+                .custom_metadata(map)
+                .execute()
+                .await
+        })
+        .await?
+        .ok_or(worker::Error::RustError("我不知道这里为什么会没有".into()))?;
+        obj_meta_data(&obj)
     }
 }

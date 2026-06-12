@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::{
-    file::{model::*, types::*, utils::*},
+    file::{types::*, utils::*},
     types::{
         backend::PCSBackend,
         error::{ErrorCode, PCSError},
@@ -15,19 +15,16 @@ use crate::utils::*;
 pub async fn handle_create_token<B: PCSBackend>(
     backend: &B,
     session_token: &str,
-    params: CreateFileTokenParams,
+    params: CreateFileTokenBody,
     server_url: &str,
-) -> Result<FileTokenResponse, PCSError> {
+) -> Result<CreateFileTokenResponse, PCSError> {
     user::get_session_by_token(backend, session_token).await?;
-    let ft = FileToken::new(params.meta_data, backend);
-
-    save_file_token(backend, &ft).await?;
+    let ft = FileTokenInfo::new(backend, params.meta_data.into()).await?;
     Ok(ft.to_response(server_url))
 }
 
 pub async fn handle_delete<B: PCSBackend>(backend: &B, object_id: &str) -> Result<(), PCSError> {
-    let ft = get_file_token(backend, object_id).await?;
-    delete_file_token(backend, &ft.key).await?;
+    delete_file(backend, object_id).await?;
     Ok(())
 }
 
@@ -35,45 +32,43 @@ pub async fn handle_download<B: PCSBackend>(
     backend: &B,
     object_id: &str,
 ) -> Result<<B::FB as FileBucket>::Stream, PCSError> {
-    let ft = get_file_token(backend, object_id).await?;
-    get_file_stream(backend, &ft.key).await
+    let (_, stream) = get_file(backend, object_id)
+        .await?
+        .ok_or(PCSError::not_found(ErrorCode::FB_GET, "file not found"))?;
+    Ok(stream)
 }
 
 pub async fn handle_callback<B: PCSBackend>(
     _backend: &B,
 ) -> Result<FileCallbackResponse, PCSError> {
-    Ok(FileCallbackResponse { result: true })
+    Ok(FileCallbackResponse {
+        result: true,
+        token: FILE_UPTOKEN.into(),
+    })
 }
 
 pub async fn handle_start_upload<B: PCSBackend>(
-    backend: &B,
-    token_key: &str,
+    _backend: &B,
+    bucket: &str,
+    _token_key: &str,
 ) -> Result<StartUploadResponse, PCSError> {
-    let key = decode_base64_key(token_key)?;
-    let ft = get_file_token(backend, &key).await?;
-
-    let fb = backend.fb();
-    let upload_id = fb
-        .create_multipart_upload(&ft.key)
-        .await
-        .map_pcs_error(ErrorCode::FB_CREATE_MULTIPART_UPLOAD)?;
-
-    Ok(StartUploadResponse { upload_id })
+    Ok(StartUploadResponse {
+        upload_id: bucket.into(),
+    })
 }
 
 pub async fn handle_upload_part<B: PCSBackend>(
     backend: &B,
     token_key: &str,
     upload_id: &str,
-    part_number: u32,
+    part_number: u16,
     data: &[u8],
 ) -> Result<UploadPartResponse, PCSError> {
     let key = decode_base64_key(token_key)?;
-    let ft = get_file_token(backend, &key).await?;
 
     let fb = backend.fb();
     let mut upload = fb
-        .get_multipart_upload(&ft.key, upload_id)
+        .get_multipart_upload(&key, upload_id)
         .await
         .map_pcs_error(ErrorCode::FB_GET_MULTIPART_UPLOAD)?;
     let part = upload
@@ -88,14 +83,12 @@ pub async fn handle_complete_upload<B: PCSBackend>(
     backend: &B,
     token_key: &str,
     upload_id: &str,
-    params: CompleteUploadParams,
+    params: CompleteUploadBody,
 ) -> Result<CompleteUploadResponse, PCSError> {
     let key = decode_base64_key(token_key)?;
-    let ft = get_file_token(backend, &key).await?;
-
     let fb = backend.fb();
     let mut upload = fb
-        .get_multipart_upload(&ft.key, upload_id)
+        .get_multipart_upload(&key, upload_id)
         .await
         .map_pcs_error(ErrorCode::FB_GET_MULTIPART_UPLOAD)?;
 
@@ -110,7 +103,5 @@ pub async fn handle_complete_upload<B: PCSBackend>(
         .await
         .map_pcs_error(ErrorCode::FB_MULTIPART_COMPLETE)?;
 
-    Ok(CompleteUploadResponse {
-        upload_id: upload_id.into(),
-    })
+    Ok(CompleteUploadResponse { key })
 }

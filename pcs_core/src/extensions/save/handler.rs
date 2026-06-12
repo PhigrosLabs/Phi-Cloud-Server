@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use phi_save_codec::{GameKey, GameProgress, GameRecord, Settings, User};
 
 use super::save_provider::SaveProvider;
+use crate::file::{FileTokenMetaData, get_file};
 use crate::utils::{ToRfc3339Z, stream_to_bytes};
 use crate::{
     file,
-    file::model::{FileToken, MetaData},
     game::model::{GameSave, GameSaveIdsByUser},
     types::{
         backend::PCSBackend,
@@ -58,9 +58,9 @@ pub async fn handle_save_extension_get<B: PCSBackend>(
         .map_pcs_error(ErrorCode::KV_GET)?
         .ok_or_else(PCSError::db_not_found)?;
 
-    let ft = file::get_file_token(backend, &gs.game_file_object_id).await?;
-    let fb = backend.fb();
-    let stream = fb.get(&ft.key).await.map_pcs_error(ErrorCode::FB_GET)?;
+    let (_, stream) = get_file(backend, &gs.game_file_object_id)
+        .await?
+        .ok_or(PCSError::internal_error(ErrorCode::FB_GET, "file no found"))?;
     let data = stream_to_bytes(stream)
         .await
         .map_pcs_error(ErrorCode::FB_GET)?;
@@ -136,8 +136,6 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
         .map_pcs_error(ErrorCode::KV_GET)?
         .ok_or_else(PCSError::db_not_found)?;
 
-    let ft = file::get_file_token(backend, &gs.game_file_object_id).await?;
-    let old_file_key = ft.key.clone();
     let fb = backend.fb();
 
     let all_fields_provided = params.game_key.is_some()
@@ -166,7 +164,9 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
             .map_err(|e| PCSError::internal_error(ErrorCode::SAVE_SET_USER, e.to_string()))?;
         p
     } else {
-        let stream = fb.get(&ft.key).await.map_pcs_error(ErrorCode::FB_GET)?;
+        let (_, stream) = get_file(backend, &gs.game_file_object_id)
+            .await?
+            .ok_or(PCSError::internal_error(ErrorCode::FB_GET, "file no found"))?;
         save_data = Some(
             stream_to_bytes(stream)
                 .await
@@ -216,23 +216,26 @@ pub async fn handle_save_extension_put<B: PCSBackend>(
         hex::encode(hasher.finalize())
     };
 
-    let meta_data = MetaData::new(new_data.len() as u64, checksum, ft.meta_data.prefix.clone());
-    let new_ft = FileToken::new(meta_data, backend);
-    file::save_file_token(backend, &new_ft).await?;
+    let new_file_key = backend.random_id();
 
-    fb.put(&new_ft.key, &new_data)
-        .await
-        .map_pcs_error(ErrorCode::FB_PUT)?;
+    let meta_data = FileTokenMetaData {
+        checksum,
+        prefix: "gamesaves".into(),
+        size: new_data.len() as u64,
+    };
+
+    file::put_file(backend, &new_file_key, &new_data, meta_data.into()).await?;
 
     let utc_now = backend.utc_now();
-    gs.game_file_object_id = new_ft.key;
+    let old_file_key = gs.game_file_object_id;
+    gs.game_file_object_id = new_file_key;
     gs.updated_at = utc_now;
+    gs.modified_at = utc_now.to_rfc3339_z();
     kv.put::<GameSave>(&gs.object_id, &gs)
         .await
         .map_pcs_error(ErrorCode::KV_PUT)?;
 
     let _ = fb.delete(&old_file_key).await;
-    let _ = kv.delete::<FileToken>(&old_file_key).await;
 
     Ok(())
 }

@@ -4,7 +4,6 @@ mod file_bucket;
 mod kv;
 
 use std::io;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -47,6 +46,30 @@ async fn stream_to_bytes<S: ByteStream>(stream: S) -> Vec<u8> {
     result
 }
 
+fn format_body(data: &[u8]) -> Option<String> {
+    if data.is_empty() {
+        return None;
+    }
+    if data.len() > 2000 {
+        return Some(format!("[body: {} bytes, skipped — too large]", data.len()));
+    }
+    let text = match std::str::from_utf8(data) {
+        Ok(s) => s,
+        Err(_) => {
+            return Some(format!(
+                "[body: {} bytes, skipped — not valid UTF-8]",
+                data.len()
+            ));
+        }
+    };
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(text)
+        && let Ok(pretty) = serde_json::to_string_pretty(&value)
+    {
+        return Some(format!("[body: {} bytes]\n{}", data.len(), pretty));
+    }
+    Some(format!("[body: {} bytes] {}", data.len(), text))
+}
+
 async fn handle_req(
     state: AppState,
     req: Request<Incoming>,
@@ -60,17 +83,40 @@ async fn handle_req(
         .get("X-LC-Session")
         .and_then(|v| v.to_str().ok());
 
-    let body = &body.collect().await?.to_bytes().to_vec();
+    let req_headers: Vec<String> = parts
+        .headers
+        .iter()
+        .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("<binary>")))
+        .collect();
+
+    let body_bytes = body.collect().await?.to_bytes();
+    let body_vec = body_bytes.to_vec();
+
+    println!("===开始===");
+    println!("> {} {}", method, path);
+    for h in &req_headers {
+        println!("> {}", h);
+    }
+    if let Some(body_log) = format_body(&body_vec) {
+        for line in body_log.lines() {
+            println!("> {}", line);
+        }
+    }
 
     let pcs_req = pcs_core::types::Request {
         method,
         path,
-        body,
+        body: &body_vec,
         session_token,
         server_url: &state.server_url,
     };
 
     let resp = PhiCloudServer::handler(state.as_ref(), pcs_req).await;
+
+    println!("< {}", resp.status_code);
+    if let Some(ct) = &resp.content_type {
+        println!("< Content-Type: {}", ct);
+    }
 
     let mut builder = Response::builder().status(resp.status_code);
 
@@ -79,13 +125,27 @@ async fn handle_req(
     }
 
     let response = match resp.body {
-        Some(pcs_core::types::Body::Bytes(bytes)) => builder.body(Full::new(bytes.into())).unwrap(),
+        Some(pcs_core::types::Body::Bytes(bytes)) => {
+            if let Some(body_log) = format_body(&bytes) {
+                for line in body_log.lines() {
+                    println!("< {}", line);
+                }
+            }
+            builder.body(Full::new(bytes.into())).unwrap()
+        }
         Some(pcs_core::types::Body::ByteStream(stream)) => {
             let data = stream_to_bytes(stream).await;
+            if let Some(body_log) = format_body(&data) {
+                for line in body_log.lines() {
+                    println!("< {}", line);
+                }
+            }
             builder.body(Full::new(Bytes::from(data))).unwrap()
         }
         None => builder.body(Full::new(Bytes::new())).unwrap(),
     };
+
+    println!("===结束===");
 
     Ok(response)
 }
@@ -134,9 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let backend = Arc::new(backend);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
-
-    let listener = TcpListener::bind(addr).await?;
+    let listener = TcpListener::bind(config.addr).await?;
 
     let tls_acceptor: Option<TlsAcceptor> =
         if !config.tls_cert.is_empty() && !config.tls_key.is_empty() {
@@ -163,10 +221,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             server_config.alpn_protocols =
                 vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
             let acceptor = TlsAcceptor::from(Arc::new(server_config));
-            println!("TLS enabled, listening on https://{}", addr);
+            println!("TLS enabled, listening on https://{}", config.addr);
             Some(acceptor)
         } else {
-            println!("Listening on http://{}", addr);
+            println!("Listening on http://{}", config.addr);
             None
         };
 

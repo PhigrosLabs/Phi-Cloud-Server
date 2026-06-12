@@ -1,5 +1,4 @@
 pub mod handler;
-pub mod model;
 pub mod types;
 pub mod utils;
 pub use handler::*;

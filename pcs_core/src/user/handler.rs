@@ -92,7 +92,7 @@ pub async fn handle_delete<B: PCSBackend>(
     let gs_ids = game::get_game_save_ids_by_user(backend, &session.object_id).await?;
     for gs_objid in &gs_ids {
         if let Ok(gs) = game::get_game_save(backend, gs_objid).await {
-            file::utils::delete_file_token(backend, &gs.game_file_object_id).await?;
+            file::utils::delete_file(backend, &gs.game_file_object_id).await?;
         }
         game::delete_game_save(backend, gs_objid).await?;
     }

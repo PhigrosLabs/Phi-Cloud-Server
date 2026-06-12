@@ -126,8 +126,8 @@ impl PhiCloudServer {
             // Upload routes
             // 私有接口
             // =========================
-            ("POST", ["buckets", _bucket, "objects", token_key, "uploads"]) => {
-                created(&file::handle_start_upload(backend, token_key).await?)
+            ("POST", ["buckets", bucket, "objects", token_key, "uploads"]) => {
+                created(&file::handle_start_upload(backend, bucket, token_key).await?)
             }
 
             (
@@ -142,7 +142,7 @@ impl PhiCloudServer {
                     part_num,
                 ],
             ) => {
-                let pn: u32 = part_num.parse().map_err(|_| {
+                let pn: u16 = part_num.parse().map_err(|_| {
                     PCSError::bad_request(ErrorCode::INVALID_PART_NUMBER, "invalid part number")
                 })?;
 
@@ -168,7 +168,6 @@ impl PhiCloudServer {
             // =========================
             // Game save routes
             // https://developer.taptap.cn/docs/v3/sdk/gamesaves/guide/#%E6%8E%A5%E5%8F%A3%E5%88%97%E8%A1%A8
-            // 未实现获取单个存档
             // =========================
 
             // 查询存档 GET /gamesaves 根据查询条件查询存档
@@ -193,7 +192,13 @@ impl PhiCloudServer {
                 ok(&game::handle_update(backend, obj_id, Self::st(st)?, params).await?)
             }
 
-            // 删除存档 DELETE /gamesaves/:id 根据 id 删除文档(taptap把存档打错成文档了)
+            // 获取存档 GET /gamesaves/:id 根据 id 来获取存档记录
+            ("GET", ["1.1", "classes", "_GameSave", obj_id])
+            | ("GET", ["1.1", "gamesaves", obj_id]) => {
+                ok(&game::handle_get(backend, obj_id, Self::st(st)?, server_url).await?)
+            }
+
+            // 删除存档 DELETE /gamesaves/:id 根据 id 删除文档 (taptap把存档打错成文档了)
             ("DELETE", ["1.1", "classes", "_GameSave", obj_id])
             | ("DELETE", ["1.1", "gamesaves", obj_id]) => {
                 game::handle_delete(backend, obj_id, Self::st(st)?).await?;
@@ -235,8 +240,9 @@ impl PhiCloudServer {
     }
 
     fn st(session_token: Option<&str>) -> Result<&str, PCSError> {
-        session_token.ok_or_else(|| {
-            PCSError::unauthorized(ErrorCode::MISSING_SESSION_TOKEN, "missing session token")
-        })
+        session_token.ok_or(PCSError::unauthorized(
+            ErrorCode::MISSING_SESSION_TOKEN,
+            "missing session token",
+        ))
     }
 }
